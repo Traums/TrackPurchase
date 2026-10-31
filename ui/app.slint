@@ -1,0 +1,989 @@
+import { LineEdit, ListView, Palette, Switch } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+export { Theme }
+import {
+    Card,
+    Chip,
+    GhostButton,
+    PrimaryButton,
+    SubscriptionRowView,
+    SummaryCard,
+    TextField,
+} from "widgets.slint";
+
+export struct Choice {
+    label: string,
+    swatch: color,
+}
+
+export struct SubscriptionRow {
+    id: string,
+    name: string,
+    detail: string,
+    when: string,
+    price: string,
+    letter: string,
+    swatch: color,
+    paused: bool,
+    pause-label: string,
+    balance-text: string,
+    can-topup: bool,
+}
+
+export struct TimelineRow {
+    header: bool,
+    label: string,
+    price: string,
+}
+
+export struct CategoryRow {
+    name: string,
+    amount: string,
+    share: float,
+    swatch: color,
+}
+
+export struct BalanceRow {
+    id: string,
+    name: string,
+    amount: string,
+    until: string,
+    detail: string,
+}
+
+component ModalShell inherits Rectangle {
+    in property <bool> open;
+    callback dismiss();
+    property <bool> shown: root.open || root.opacity > 0.01;
+    visible: root.shown;
+    opacity: root.open ? 1 : 0;
+    background: Theme.overlay;
+    animate opacity { duration: Theme.motion; }
+
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.open;
+        clicked => { root.dismiss(); }
+    }
+
+    VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+            cross-axis-alignment: center;
+            @children
+        }
+    }
+}
+
+component ListColumn inherits VerticalLayout {
+    in property <[SubscriptionRow]> rows;
+    in property <[Choice]> category-choices;
+    in property <string> hint;
+    in property <string> confirm-id;
+    in property <bool> empty;
+    in property <bool> no-results;
+    in property <int> filter-index;
+    in property <int> sort-index;
+    in property <int> category-index;
+    callback pick-filter(int);
+    callback pick-sort(int);
+    callback pick-category(int);
+    callback add();
+    callback edit(string);
+    callback pause(string);
+    callback remove(string);
+    callback ask(string);
+    callback cancel();
+    callback topup(string);
+    vertical-stretch: 1;
+    horizontal-stretch: 1;
+    spacing: Theme.s12;
+
+    HorizontalLayout {
+        spacing: Theme.s8;
+        cross-axis-alignment: center;
+        Chip { label: "Активные"; selected: root.filter-index == 1; clicked => { root.pick-filter(1); } }
+        Chip { label: "Все"; selected: root.filter-index == 0; clicked => { root.pick-filter(0); } }
+        Chip { label: "Пауза"; selected: root.filter-index == 2; clicked => { root.pick-filter(2); } }
+        Rectangle { horizontal-stretch: 1; }
+        Chip { label: "По дате"; selected: root.sort-index == 0; clicked => { root.pick-sort(0); } }
+        Chip { label: "По сумме"; selected: root.sort-index == 1; clicked => { root.pick-sort(1); } }
+        Chip { label: "По названию"; selected: root.sort-index == 2; clicked => { root.pick-sort(2); } }
+    }
+
+    Flickable {
+        height: Theme.control;
+        horizontal-stretch: 1;
+        content-width: filter-chips.preferred-width;
+        filter-chips := HorizontalLayout {
+            spacing: Theme.s8;
+            alignment: start;
+            cross-axis-alignment: center;
+            Chip { label: "Все категории"; selected: root.category-index == 0; clicked => { root.pick-category(0); } }
+            for cat[index] in root.category-choices: Chip {
+                label: cat.label;
+                marked: true;
+                swatch: cat.swatch;
+                selected: root.category-index == index + 1;
+                clicked => { root.pick-category(index + 1); }
+            }
+        }
+    }
+
+    Card {
+        vertical-stretch: 1;
+        min-height: Theme.list-min;
+        clip: true;
+        VerticalLayout {
+            padding: Theme.s8;
+            if root.rows.length == 0: VerticalLayout {
+                vertical-stretch: 1;
+                alignment: center;
+                spacing: Theme.s12;
+                padding: Theme.s24;
+                Text {
+                    text: root.empty ? "Пока нет подписок" : (root.no-results ? "Ничего не найдено" : "Пусто");
+                    font-size: Theme.font-lg;
+                    font-weight: 600;
+                    color: Theme.text;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: root.hint;
+                    font-size: Theme.font-sm;
+                    color: Theme.muted;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+                if root.empty: HorizontalLayout {
+                    alignment: center;
+                    PrimaryButton {
+                        label: "Добавить первую подписку";
+                        clicked => { root.add(); }
+                    }
+                }
+            }
+            if root.rows.length > 0: ListView {
+                vertical-stretch: 1;
+                for row in root.rows: SubscriptionRowView {
+                    name: row.name;
+                    detail: row.detail;
+                    when: row.when;
+                    price: row.price;
+                    letter: row.letter;
+                    swatch: row.swatch;
+                    paused: row.paused;
+                    pause-label: row.pause-label;
+                    balance-text: row.balance-text;
+                    can-topup: row.can-topup;
+                    confirming: root.confirm-id == row.id;
+                    topup => { root.topup(row.id); }
+                    edit => { root.edit(row.id); }
+                    pause => { root.pause(row.id); }
+                    ask => { root.ask(row.id); }
+                    remove => { root.remove(row.id); }
+                    cancel => { root.cancel(); }
+                }
+            }
+        }
+    }
+}
+
+component SideColumn inherits Rectangle {
+    in property <[TimelineRow]> timeline;
+    in property <[CategoryRow]> categories;
+    in property <[BalanceRow]> balances;
+    in property <bool> fill;
+    callback topup(string);
+    horizontal-stretch: fill ? 1 : 0;
+    vertical-stretch: 1;
+    min-width: Theme.side;
+    preferred-width: Theme.side;
+    min-height: Theme.list-min;
+    background: transparent;
+
+    VerticalLayout {
+        spacing: Theme.s16;
+        alignment: start;
+
+    Card {
+        VerticalLayout {
+            padding: Theme.s16;
+            spacing: Theme.s8;
+            Text {
+                text: "Балансы сервисов";
+                font-size: Theme.font-md;
+                font-weight: 600;
+                color: Theme.text;
+            }
+            Text {
+                text: "У каждого свой остаток";
+                font-size: Theme.font-xs;
+                color: Theme.muted;
+            }
+            if root.balances.length == 0: Text {
+                text: "В подписке выберите «С баланса» и укажите, сколько на ней осталось.";
+                font-size: Theme.font-sm;
+                color: Theme.muted;
+                wrap: word-wrap;
+            }
+            if root.balances.length > 0: VerticalLayout {
+                spacing: Theme.s8;
+                for item in root.balances: VerticalLayout {
+                    spacing: Theme.s4;
+                    HorizontalLayout {
+                        spacing: Theme.s8;
+                        cross-axis-alignment: center;
+                        Text {
+                            text: item.name;
+                            font-size: Theme.font-sm;
+                            color: Theme.text;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: item.amount;
+                            font-size: Theme.font-sm;
+                            font-weight: 600;
+                            color: Theme.text;
+                        }
+                    }
+                    Text {
+                        text: item.until;
+                        font-size: Theme.font-xs;
+                        color: Theme.text;
+                        wrap: word-wrap;
+                    }
+                    if item.detail != "": Text {
+                        text: item.detail;
+                        font-size: Theme.font-xs;
+                        color: Theme.muted;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        alignment: start;
+                        GhostButton {
+                            label: "Пополнить";
+                            clicked => { root.topup(item.id); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Card {
+        VerticalLayout {
+            padding: Theme.s16;
+            spacing: Theme.s8;
+            Text {
+                text: "Ближайшие списания";
+                font-size: Theme.font-md;
+                font-weight: 600;
+                color: Theme.text;
+            }
+            Text {
+                text: "30 дней, каждая дата один раз";
+                font-size: Theme.font-xs;
+                color: Theme.muted;
+            }
+            if root.timeline.length == 0: Text {
+                text: "В ближайшие 30 дней списаний нет";
+                font-size: Theme.font-sm;
+                color: Theme.muted;
+                wrap: word-wrap;
+            }
+            if root.timeline.length > 0: VerticalLayout {
+                spacing: Theme.s4;
+                for item in root.timeline: Rectangle {
+                    height: item.header ? Theme.s32 : Theme.s24 + Theme.s4;
+                    if item.header: Text {
+                        text: item.label;
+                        font-size: Theme.font-xs;
+                        color: Theme.muted;
+                        vertical-alignment: center;
+                        height: parent.height;
+                    }
+                    if !item.header: HorizontalLayout {
+                        padding-left: Theme.s8;
+                        spacing: Theme.s8;
+                        cross-axis-alignment: center;
+                        Text {
+                            text: item.label;
+                            font-size: Theme.font-sm;
+                            color: Theme.text;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: item.price;
+                            font-size: Theme.font-sm;
+                            font-weight: 600;
+                            color: Theme.text;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Card {
+        VerticalLayout {
+            padding: Theme.s16;
+            spacing: Theme.s12;
+            Text {
+                text: "По категориям";
+                font-size: Theme.font-md;
+                font-weight: 600;
+                color: Theme.text;
+            }
+            if root.categories.length == 0: Text {
+                text: "Нет расходов по активным подпискам";
+                font-size: Theme.font-sm;
+                color: Theme.muted;
+                wrap: word-wrap;
+            }
+            for item in root.categories: VerticalLayout {
+                spacing: Theme.s4;
+                HorizontalLayout {
+                    spacing: Theme.s8;
+                    cross-axis-alignment: center;
+                    Rectangle {
+                        width: Theme.s8;
+                        height: Theme.s8;
+                        border-radius: Theme.s4;
+                        background: item.swatch;
+                    }
+                    Text {
+                        text: item.name;
+                        font-size: Theme.font-sm;
+                        color: Theme.text;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: item.amount;
+                        font-size: Theme.font-sm;
+                        font-weight: 600;
+                        color: Theme.text;
+                    }
+                }
+                Rectangle {
+                    height: Theme.s8;
+                    border-radius: Theme.s4;
+                    background: Theme.surface-2;
+                    Rectangle {
+                        width: max(parent.width * item.share, Theme.s4);
+                        height: parent.height;
+                        border-radius: Theme.s4;
+                        background: item.swatch;
+                    }
+                }
+            }
+        }
+    }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "Подписки";
+    preferred-width: Theme.window-w;
+    preferred-height: Theme.window-h;
+    min-width: Theme.window-min-w;
+    min-height: Theme.window-min-h;
+    background: Theme.page;
+    default-font-family: "Segoe UI";
+    default-font-size: Theme.font-md;
+
+    in property <[SubscriptionRow]> rows;
+    in property <[TimelineRow]> timeline;
+    in property <[CategoryRow]> categories;
+    in property <[BalanceRow]> balances;
+    in property <[Choice]> category-choices;
+    in property <string> monthly;
+    in property <string> yearly;
+    in property <string> due;
+    in property <string> active-count;
+    in property <string> hint;
+    in property <string> status;
+    in property <string> data-path;
+    in property <string> form-title: "Новая подписка";
+    in property <string> name-error;
+    in property <string> amount-error;
+    in property <string> date-error;
+    in property <string> note-error;
+    in property <string> settings-error;
+    in property <bool> form-open;
+    in property <bool> settings-open;
+    in property <bool> can-save;
+    in property <bool> empty;
+    in property <bool> no-results;
+
+    in-out property <string> form-name;
+    in-out property <string> form-amount;
+    in-out property <string> form-note;
+    in-out property <string> form-date;
+    in-out property <int> form-currency-index: 0;
+    in-out property <int> form-period-index: 1;
+    in-out property <int> form-category-index: 6;
+    in-out property <bool> form-active: true;
+    in-out property <int> form-source-index: 0;
+    in-out property <string> form-balance;
+    in property <string> form-balance-error;
+    in-out property <string> category-draft;
+    in property <string> category-error;
+    in property <bool> topup-open;
+    in property <bool> topup-can-save;
+    in property <string> topup-title;
+    in property <string> topup-current;
+    in property <string> topup-next;
+    in property <string> topup-error;
+    in-out property <string> topup-amount;
+    in-out property <string> query;
+    in-out property <int> filter-index: 1;
+    in-out property <int> sort-index: 0;
+    in-out property <int> category-index: 0;
+    in-out property <string> confirm-id;
+    in-out property <string> settings-usd;
+    in-out property <string> settings-eur;
+    in-out property <int> settings-base-index: 0;
+    in-out property <string> import-path;
+
+    callback view-changed();
+    callback validate-form();
+    callback submit-form();
+    callback open-form();
+    callback close-form();
+    callback edit-item(string);
+    callback toggle-pause(string);
+    callback remove-item(string);
+    callback open-settings();
+    callback close-settings();
+    callback apply-settings();
+    callback theme-changed();
+    callback export-json();
+    callback export-csv();
+    callback import-file();
+    callback open-topup(string);
+    callback close-topup();
+    callback submit-topup();
+    callback validate-topup();
+    callback add-category();
+
+    in-out property <bool> wide: true;
+
+    changed query => { root.view-changed(); }
+    changed filter-index => { root.view-changed(); }
+    changed sort-index => { root.view-changed(); }
+    changed category-index => { root.view-changed(); }
+    changed form-name => { root.validate-form(); }
+    changed form-amount => { root.validate-form(); }
+    changed form-date => { root.validate-form(); }
+    changed form-note => { root.validate-form(); }
+    changed form-currency-index => { root.validate-form(); }
+    changed form-period-index => { root.validate-form(); }
+    changed form-category-index => { root.validate-form(); }
+    changed form-active => { root.validate-form(); }
+    changed form-source-index => { root.validate-form(); }
+    changed form-balance => { root.validate-form(); }
+    changed topup-amount => { root.validate-topup(); }
+
+    public function apply-theme() {
+        Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light;
+    }
+
+    public function focus-name() {
+        name-field.focus-input();
+    }
+
+    public function focus-topup() {
+        topup-field.focus-input();
+    }
+
+    init => { root.apply-theme(); }
+
+    FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape && root.topup-open) {
+                root.close-topup();
+                return accept;
+            }
+            if (event.text == Key.Escape && root.form-open) {
+                root.close-form();
+                return accept;
+            }
+            if (event.text == Key.Escape && root.settings-open) {
+                root.close-settings();
+                return accept;
+            }
+            return reject;
+        }
+
+        Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: Theme.page;
+            animate background { duration: Theme.motion; }
+
+            VerticalLayout {
+                padding: Theme.s16;
+                spacing: Theme.s16;
+
+                HorizontalLayout {
+                    spacing: Theme.s12;
+                    cross-axis-alignment: center;
+                    Text {
+                        text: "Подписки";
+                        font-size: Theme.font-xl;
+                        font-weight: 700;
+                        color: Theme.text;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Rectangle {
+                        width: Theme.search;
+                        height: Theme.control;
+                        horizontal-stretch: 0;
+                        LineEdit {
+                            width: parent.width;
+                            height: parent.height;
+                            placeholder-text: "Поиск";
+                            text <=> root.query;
+                        }
+                    }
+                    PrimaryButton {
+                        label: "+ Добавить";
+                        clicked => { root.open-form(); }
+                    }
+                    GhostButton {
+                        label: "Настройки";
+                        clicked => { root.open-settings(); }
+                    }
+                }
+
+                if root.status != "": Text {
+                    text: root.status;
+                    font-size: Theme.font-sm;
+                    color: Theme.danger;
+                    wrap: word-wrap;
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.s12;
+                    SummaryCard { caption: "В месяц"; value: root.monthly; }
+                    SummaryCard { caption: "В год"; value: root.yearly; }
+                    SummaryCard { caption: "К списанию за 30 дней"; value: root.due; }
+                    SummaryCard { caption: "Активных подписок"; value: root.active-count; }
+                }
+
+                if root.wide: HorizontalLayout {
+                    vertical-stretch: 1;
+                    spacing: Theme.s16;
+                    ListColumn {
+                        rows: root.rows;
+                        category-choices: root.category-choices;
+                        hint: root.hint;
+                        confirm-id: root.confirm-id;
+                        empty: root.empty;
+                        no-results: root.no-results;
+                        filter-index: root.filter-index;
+                        sort-index: root.sort-index;
+                        category-index: root.category-index;
+                        pick-filter(index) => { root.filter-index = index; }
+                        pick-sort(index) => { root.sort-index = index; }
+                        pick-category(index) => { root.category-index = index; }
+                        add => { root.open-form(); }
+                        edit(id) => { root.edit-item(id); }
+                        pause(id) => { root.toggle-pause(id); }
+                        remove(id) => { root.remove-item(id); }
+                        ask(id) => { root.confirm-id = id; }
+                        cancel => { root.confirm-id = ""; }
+                        topup(id) => { root.open-topup(id); }
+                    }
+                    SideColumn {
+                        timeline: root.timeline;
+                        categories: root.categories;
+                        balances: root.balances;
+                        fill: false;
+                        topup(id) => { root.open-topup(id); }
+                    }
+                }
+
+                if !root.wide: VerticalLayout {
+                    vertical-stretch: 1;
+                    spacing: Theme.s16;
+                    ListColumn {
+                        rows: root.rows;
+                        category-choices: root.category-choices;
+                        hint: root.hint;
+                        confirm-id: root.confirm-id;
+                        empty: root.empty;
+                        no-results: root.no-results;
+                        filter-index: root.filter-index;
+                        sort-index: root.sort-index;
+                        category-index: root.category-index;
+                        pick-filter(index) => { root.filter-index = index; }
+                        pick-sort(index) => { root.sort-index = index; }
+                        pick-category(index) => { root.category-index = index; }
+                        add => { root.open-form(); }
+                        edit(id) => { root.edit-item(id); }
+                        pause(id) => { root.toggle-pause(id); }
+                        remove(id) => { root.remove-item(id); }
+                        ask(id) => { root.confirm-id = id; }
+                        cancel => { root.confirm-id = ""; }
+                        topup(id) => { root.open-topup(id); }
+                    }
+                    SideColumn {
+                        timeline: root.timeline;
+                        categories: root.categories;
+                        balances: root.balances;
+                        fill: true;
+                        topup(id) => { root.open-topup(id); }
+                    }
+                }
+
+                Text {
+                    text: "Данные хранятся только на этом компьютере";
+                    font-size: Theme.font-xs;
+                    color: Theme.muted;
+                }
+            }
+
+            ModalShell {
+                width: parent.width;
+                height: parent.height;
+                open: root.form-open;
+                dismiss => { root.close-form(); }
+                Rectangle {
+                    width: Theme.dialog;
+                    horizontal-stretch: 0;
+                    vertical-stretch: 0;
+                    background: Theme.surface;
+                    border-radius: Theme.radius;
+                    border-width: Theme.hairline;
+                    border-color: Theme.line;
+                    drop-shadow-blur: Theme.shadow-blur;
+                    drop-shadow-color: Theme.shadow;
+                    drop-shadow-offset-y: Theme.shadow-y;
+                    TouchArea { enabled: root.form-open; }
+                    VerticalLayout {
+                        padding: Theme.s16;
+                        spacing: Theme.s8;
+                        Text {
+                            text: root.form-title;
+                            font-size: Theme.font-lg;
+                            font-weight: 600;
+                            color: Theme.text;
+                        }
+                        name-field := TextField {
+                            caption: "Название";
+                            placeholder: "Например, Кинопоиск";
+                            error: root.name-error;
+                            value <=> root.form-name;
+                            accepted => { root.submit-form(); }
+                        }
+                        TextField {
+                            caption: "Сумма";
+                            placeholder: "0";
+                            error: root.amount-error;
+                            value <=> root.form-amount;
+                            accepted => { root.submit-form(); }
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.s8;
+                            alignment: start;
+                            cross-axis-alignment: center;
+                            Chip { label: "₽"; selected: root.form-currency-index == 0; clicked => { root.form-currency-index = 0; } }
+                            Chip { label: "$"; selected: root.form-currency-index == 1; clicked => { root.form-currency-index = 1; } }
+                            Chip { label: "€"; selected: root.form-currency-index == 2; clicked => { root.form-currency-index = 2; } }
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.s8;
+                            alignment: start;
+                            cross-axis-alignment: center;
+                            Chip { label: "Неделя"; selected: root.form-period-index == 0; clicked => { root.form-period-index = 0; } }
+                            Chip { label: "Месяц"; selected: root.form-period-index == 1; clicked => { root.form-period-index = 1; } }
+                            Chip { label: "Квартал"; selected: root.form-period-index == 2; clicked => { root.form-period-index = 2; } }
+                            Chip { label: "Год"; selected: root.form-period-index == 3; clicked => { root.form-period-index = 3; } }
+                        }
+                        Text {
+                            text: "Откуда списывать";
+                            font-size: Theme.font-xs;
+                            color: Theme.muted;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.s8;
+                            alignment: start;
+                            cross-axis-alignment: center;
+                            Chip { label: "С карты"; selected: root.form-source-index == 0; clicked => { root.form-source-index = 0; } }
+                            Chip { label: "С баланса"; selected: root.form-source-index == 1; clicked => { root.form-source-index = 1; } }
+                        }
+                        if root.form-source-index == 1: TextField {
+                            caption: "Баланс этого сервиса";
+                            placeholder: "Сколько осталось";
+                            error: root.form-balance-error;
+                            value <=> root.form-balance;
+                            accepted => { root.submit-form(); }
+                        }
+                        TextField {
+                            caption: "Следующее списание";
+                            placeholder: "ДД.ММ.ГГГГ";
+                            error: root.date-error;
+                            value <=> root.form-date;
+                            accepted => { root.submit-form(); }
+                        }
+                        Text {
+                            text: "Категория";
+                            font-size: Theme.font-xs;
+                            color: Theme.muted;
+                        }
+                        Flickable {
+                            height: Theme.control;
+                            content-width: form-chips.preferred-width;
+                            form-chips := HorizontalLayout {
+                                spacing: Theme.s8;
+                                alignment: start;
+                                cross-axis-alignment: center;
+                                for cat[index] in root.category-choices: Chip {
+                                    label: cat.label;
+                                    marked: true;
+                                    swatch: cat.swatch;
+                                    selected: root.form-category-index == index;
+                                    clicked => { root.form-category-index = index; }
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.s8;
+                            alignment: start;
+                            cross-axis-alignment: center;
+                            Rectangle {
+                                height: Theme.control;
+                                horizontal-stretch: 1;
+                                LineEdit {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    placeholder-text: "Своя категория";
+                                    text <=> root.category-draft;
+                                    accepted => { root.add-category(); }
+                                }
+                            }
+                            GhostButton {
+                                label: "Добавить";
+                                clicked => { root.add-category(); }
+                            }
+                        }
+                        if root.category-error != "": Text {
+                            text: root.category-error;
+                            font-size: Theme.font-xs;
+                            color: Theme.danger;
+                            wrap: word-wrap;
+                        }
+                        TextField {
+                            caption: "Заметка";
+                            placeholder: "Необязательно";
+                            error: root.note-error;
+                            value <=> root.form-note;
+                            accepted => { root.submit-form(); }
+                        }
+                        HorizontalLayout {
+                            cross-axis-alignment: center;
+                            Text {
+                                text: "Активна";
+                                font-size: Theme.font-sm;
+                                color: Theme.text;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+                            Switch { checked <=> root.form-active; }
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.s8;
+                            cross-axis-alignment: center;
+                            GhostButton {
+                                label: "Отмена";
+                                clicked => { root.close-form(); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            PrimaryButton {
+                                label: "Сохранить";
+                                enabled: root.can-save;
+                                clicked => { root.submit-form(); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            ModalShell {
+                width: parent.width;
+                height: parent.height;
+                open: root.topup-open;
+                dismiss => { root.close-topup(); }
+                Rectangle {
+                    width: Theme.dialog;
+                    horizontal-stretch: 0;
+                    vertical-stretch: 0;
+                    background: Theme.surface;
+                    border-radius: Theme.radius;
+                    border-width: Theme.hairline;
+                    border-color: Theme.line;
+                    drop-shadow-blur: Theme.shadow-blur;
+                    drop-shadow-color: Theme.shadow;
+                    drop-shadow-offset-y: Theme.shadow-y;
+                    TouchArea { enabled: root.topup-open; }
+                    VerticalLayout {
+                        padding: Theme.s16;
+                        spacing: Theme.s8;
+                        Text {
+                            text: root.topup-title;
+                            font-size: Theme.font-lg;
+                            font-weight: 600;
+                            color: Theme.text;
+                        }
+                        Text {
+                            text: root.topup-current;
+                            font-size: Theme.font-sm;
+                            color: Theme.muted;
+                        }
+                        topup-field := TextField {
+                            caption: "Сумма пополнения";
+                            placeholder: "0";
+                            error: root.topup-error;
+                            value <=> root.topup-amount;
+                            accepted => { root.submit-topup(); }
+                        }
+                        if root.topup-next != "": Text {
+                            text: root.topup-next;
+                            font-size: Theme.font-sm;
+                            font-weight: 600;
+                            color: Theme.text;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.s8;
+                            cross-axis-alignment: center;
+                            GhostButton {
+                                label: "Отмена";
+                                clicked => { root.close-topup(); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            PrimaryButton {
+                                label: "Пополнить";
+                                enabled: root.topup-can-save;
+                                clicked => { root.submit-topup(); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            ModalShell {
+                width: parent.width;
+                height: parent.height;
+                open: root.settings-open;
+                dismiss => { root.close-settings(); }
+                Rectangle {
+                    width: Theme.dialog;
+                    horizontal-stretch: 0;
+                    vertical-stretch: 0;
+                    background: Theme.surface;
+                    border-radius: Theme.radius;
+                    border-width: Theme.hairline;
+                    border-color: Theme.line;
+                    drop-shadow-blur: Theme.shadow-blur;
+                    drop-shadow-color: Theme.shadow;
+                    drop-shadow-offset-y: Theme.shadow-y;
+                    TouchArea { enabled: root.settings-open; }
+                    VerticalLayout {
+                        padding: Theme.s16;
+                        spacing: Theme.s8;
+                        Text {
+                            text: "Настройки";
+                            font-size: Theme.font-lg;
+                            font-weight: 600;
+                            color: Theme.text;
+                        }
+                        Text {
+                            text: "Тема";
+                            font-size: Theme.font-xs;
+                            color: Theme.muted;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.s8;
+                            alignment: start;
+                            Chip {
+                                label: "Тёмная";
+                                selected: Theme.dark;
+                                clicked => { Theme.dark = true; root.theme-changed(); }
+                            }
+                            Chip {
+                                label: "Светлая";
+                                selected: !Theme.dark;
+                                clicked => { Theme.dark = false; root.theme-changed(); }
+                            }
+                        }
+                        Text {
+                            text: "Базовая валюта";
+                            font-size: Theme.font-xs;
+                            color: Theme.muted;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.s8;
+                            alignment: start;
+                            Chip { label: "₽"; selected: root.settings-base-index == 0; clicked => { root.settings-base-index = 0; } }
+                            Chip { label: "$"; selected: root.settings-base-index == 1; clicked => { root.settings-base-index = 1; } }
+                            Chip { label: "€"; selected: root.settings-base-index == 2; clicked => { root.settings-base-index = 2; } }
+                        }
+                        TextField {
+                            caption: "1 $ в рублях";
+                            placeholder: "90";
+                            value <=> root.settings-usd;
+                            accepted => { root.apply-settings(); }
+                        }
+                        TextField {
+                            caption: "1 € в рублях";
+                            placeholder: "98";
+                            value <=> root.settings-eur;
+                            accepted => { root.apply-settings(); }
+                        }
+                        Text {
+                            text: root.data-path;
+                            font-size: Theme.font-xs;
+                            color: Theme.muted;
+                            wrap: word-wrap;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.s8;
+                            alignment: start;
+                            GhostButton { label: "Экспорт JSON"; clicked => { root.export-json(); } }
+                            GhostButton { label: "Экспорт CSV"; clicked => { root.export-csv(); } }
+                        }
+                        TextField {
+                            caption: "Импорт из файла";
+                            placeholder: "Путь к JSON или CSV";
+                            value <=> root.import-path;
+                            accepted => { root.import-file(); }
+                        }
+                        if root.settings-error != "": Text {
+                            text: root.settings-error;
+                            font-size: Theme.font-xs;
+                            color: Theme.danger;
+                            wrap: word-wrap;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.s8;
+                            alignment: start;
+                            GhostButton { label: "Импорт"; clicked => { root.import-file(); } }
+                            Rectangle { horizontal-stretch: 1; }
+                            GhostButton { label: "Закрыть"; clicked => { root.close-settings(); } }
+                            PrimaryButton { label: "Сохранить"; clicked => { root.apply-settings(); } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

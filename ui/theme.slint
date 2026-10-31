@@ -1,0 +1,56 @@
+import { Palette } from "std-widgets.slint";
+
+export global Theme {
+    in-out property <bool> dark: true;
+    changed dark => {
+        Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
+    }
+
+    out property <color> page: dark ? #101218 : #f2f2f7;
+    out property <color> surface: dark ? #1a1d27 : #ffffff;
+    out property <color> surface-2: dark ? #242833 : #ececf1;
+    out property <color> text: dark ? #f3f5f8 : #1c1c1e;
+    out property <color> muted: dark ? #9aa3b2 : #6e6e73;
+    out property <color> line: dark ? #313746 : #e4e4ea;
+    out property <color> accent: #3d7eff;
+    out property <color> accent-hover: #5b92ff;
+    out property <color> accent-pressed: #2f68db;
+    out property <color> on-accent: #ffffff;
+    out property <color> danger: #ff5d63;
+    out property <color> overlay: #000000a6;
+    out property <color> shadow: dark ? #00000080 : #0000001f;
+
+    out property <length> s4: 4px;
+    out property <length> s8: 8px;
+    out property <length> s12: 12px;
+    out property <length> s16: 16px;
+    out property <length> s24: 24px;
+    out property <length> s32: 32px;
+
+    out property <length> radius: 12px;
+    out property <length> radius-sm: 8px;
+    out property <length> hairline: 1px;
+    out property <length> control: 36px;
+    out property <length> row: 68px;
+    out property <length> card-h: 92px;
+    out property <length> dialog: 480px;
+    out property <length> side: 300px;
+    out property <length> search: 220px;
+    out property <length> list-min: 180px;
+    out property <length> shadow-blur: 16px;
+    out property <length> shadow-y: 4px;
+
+    out property <length> font-xs: 12px;
+    out property <length> font-sm: 13px;
+    out property <length> font-md: 15px;
+    out property <length> font-lg: 20px;
+    out property <length> font-xl: 28px;
+
+    out property <length> window-w: 1120px;
+    out property <length> window-h: 760px;
+    out property <length> window-min-w: 900px;
+    out property <length> window-min-h: 600px;
+    out property <length> wide-at: 880px;
+
+    out property <duration> motion: 160ms;
+}
