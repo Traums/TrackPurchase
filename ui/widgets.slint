@@ -362,6 +362,8 @@ export component PrimaryButton inherits Rectangle {
 
 export component SecondaryButton inherits Rectangle {
     in property <string> label;
+    in property <bool> enabled: true;
+    out property <bool> has-hover: area.has-hover;
     callback clicked();
     horizontal-stretch: 0;
     vertical-stretch: 0;
@@ -388,6 +390,7 @@ export component SecondaryButton inherits Rectangle {
     }
 
     area := TouchArea {
+        enabled: root.enabled;
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
@@ -513,7 +516,7 @@ export component SubscriptionRowView inherits Rectangle {
     animate background { duration: Theme.motion; }
 
     Rectangle { y: parent.height - 1px; height: 1px; width: parent.width; background: Theme.line; }
-    property <bool> hot: area.has-hover || delete-hit.has-hover;
+    property <bool> hot: area.has-hover || action.has-hover || delete-hit.has-hover;
     property <length> date-col: 120px;
     property <length> price-col: 96px;
     horizontal-stretch: 1;
@@ -588,7 +591,10 @@ export component SubscriptionRowView inherits Rectangle {
             }
         }
 
-        SecondaryButton {
+        action := SecondaryButton {
+            opacity: root.hot ? 1 : 0;
+            enabled: root.hot;
+            animate opacity { duration: Theme.motion; }
             label: root.can-topup ? "Пополнить" : (root.paused ? "Включить" : "Пауза");
             clicked => { if root.can-topup { root.topup(); } else { root.pause(); } }
         }

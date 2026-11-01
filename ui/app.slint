@@ -10,7 +10,6 @@ import {
     SecondaryButton,
     SettingsButton,
     SubscriptionRowView,
-    PeriodCard,
     StatusSwitch,
     SummaryCard,
     TextField,
@@ -412,7 +411,7 @@ component SideColumn inherits Rectangle {
                     width: 32px;
                     font-size: Theme.font-xs;
                     color: Theme.muted;
-                    horizontal-alignment: left;
+                    horizontal-alignment: center;
                 }
             }
             VerticalLayout {
@@ -426,21 +425,19 @@ component SideColumn inherits Rectangle {
                         height: 32px;
                         border-radius: Theme.radius-sm;
                         background: cell.today ? Theme.accent : transparent;
-                        VerticalLayout {
-                            alignment: start;
-                            padding-top: 2px;
-                            padding-left: 4px;
-                            Text {
-                                text: cell.label;
-                                font-size: Theme.font-xs;
-                                font-family: "Segoe UI";
-                                color: cell.dim ? transparent : (cell.today ? Theme.on-accent : Theme.text);
-                                horizontal-alignment: left;
-                            }
+                        Text {
+                            width: parent.width;
+                            height: parent.height;
+                            text: cell.label;
+                            font-size: Theme.font-xs;
+                            font-family: "Segoe UI";
+                            color: cell.dim ? transparent : (cell.today ? Theme.on-accent : Theme.text);
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
                         }
                         if cell.marked: Rectangle {
-                            x: 4px;
-                            y: 22px;
+                            x: (parent.width - self.width) / 2;
+                            y: parent.height - 6px;
                             width: 5px;
                             height: 5px;
                             border-radius: 3px;
@@ -650,11 +647,6 @@ export component MainWindow inherits Window {
                     spacing: Theme.s12;
                     SummaryCard { caption: "Ежемесячные расходы"; value: root.monthly; featured: true; }
                     SummaryCard { caption: "Расходы за год"; value: root.yearly; }
-                    PeriodCard {
-                        value: root.horizon-total;
-                        index: root.horizon-index;
-                        changed(index) => { root.horizon-index = index; }
-                    }
                     SummaryCard { caption: "Активных подписок"; value: root.active-count; }
                 }
 
