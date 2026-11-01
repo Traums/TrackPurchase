@@ -269,37 +269,15 @@ export component PeriodCard inherits Card {
             text: root.value;
             font-size: Theme.font-xl;
             font-weight: 600;
-            font-family: "Courier New";
+            font-family: "Segoe UI";
             color: Theme.text;
             overflow: elide;
         }
-        Slider {
-            minimum: 0;
-            maximum: 2;
-            step: 1;
-            value: root.index;
-            changed(position) => { root.changed(Math.round(position)); }
-        }
         HorizontalLayout {
-            Text {
-                text: "7";
-                font-size: Theme.font-xs;
-                color: root.index == 0 ? Theme.accent : Theme.muted;
-            }
-            Rectangle { horizontal-stretch: 1; }
-            Text {
-                text: "30";
-                font-size: Theme.font-xs;
-                color: root.index == 1 ? Theme.accent : Theme.muted;
-                horizontal-alignment: center;
-            }
-            Rectangle { horizontal-stretch: 1; }
-            Text {
-                text: "360";
-                font-size: Theme.font-xs;
-                color: root.index == 2 ? Theme.accent : Theme.muted;
-                horizontal-alignment: right;
-            }
+            spacing: 4px;
+            Segment { label: "7 дней"; on: root.index == 0; clicked => { root.changed(0); } }
+            Segment { label: "30 дней"; on: root.index == 1; clicked => { root.changed(1); } }
+            Segment { label: "360 дней"; on: root.index == 2; clicked => { root.changed(2); } }
         }
     }
 }
@@ -452,6 +430,9 @@ export component GhostButton inherits Rectangle {
 export component SummaryCard inherits Card {
     in property <string> caption;
     in property <string> value;
+    in property <bool> featured;
+    background: root.featured ? (Theme.dark ? #203c3b : #e0f5ee) : Theme.surface;
+    border-color: root.featured ? (Theme.dark ? #376359 : #a8d9ca) : Theme.line;
     horizontal-stretch: 1;
     min-width: 0px;
     height: Theme.card-h;
@@ -524,12 +505,16 @@ export component SubscriptionRowView inherits Rectangle {
     in property <bool> balance-short;
     in property <string> badge;
     callback edit();
+    callback pause();
+    callback topup();
+    in property <bool> can-topup;
     callback remove();
     background: root.hot ? Theme.surface-2 : transparent;
     animate background { duration: Theme.motion; }
 
+    Rectangle { y: parent.height - 1px; height: 1px; width: parent.width; background: Theme.line; }
     property <bool> hot: area.has-hover || delete-hit.has-hover;
-    property <length> date-col: 148px;
+    property <length> date-col: 120px;
     property <length> price-col: 96px;
     horizontal-stretch: 1;
     height: root.balance-text == "" ? Theme.row : Theme.row + Theme.s16;
@@ -595,7 +580,7 @@ export component SubscriptionRowView inherits Rectangle {
                 overflow: elide;
             }
             if root.balance-text != "": Text {
-                text: root.balance-text;
+                text: root.badge != "" ? root.balance-text + " · " + root.badge : root.balance-text;
                 font-size: Theme.font-xs;
                 font-weight: 600;
                 color: root.paused ? Theme.muted : (root.balance-short ? Theme.danger : Theme.ok);
@@ -603,28 +588,9 @@ export component SubscriptionRowView inherits Rectangle {
             }
         }
 
-        if root.badge != "": Rectangle {
-            horizontal-stretch: 0;
-            vertical-stretch: 0;
-            height: Theme.s24;
-            border-radius: Theme.radius-sm;
-            background: Theme.danger-soft;
-            border-width: Theme.hairline;
-            border-color: Theme.danger;
-            HorizontalLayout {
-                padding-left: Theme.s8;
-                padding-right: Theme.s8;
-                alignment: center;
-                cross-axis-alignment: center;
-                Text {
-                    text: root.badge;
-                    font-size: Theme.font-xs;
-                    font-weight: 600;
-                    font-family: "Courier New";
-                    color: Theme.danger;
-                    vertical-alignment: center;
-                }
-            }
+        SecondaryButton {
+            label: root.can-topup ? "Пополнить" : (root.paused ? "Включить" : "Пауза");
+            clicked => { if root.can-topup { root.topup(); } else { root.pause(); } }
         }
 
         VerticalLayout {
@@ -642,9 +608,8 @@ export component SubscriptionRowView inherits Rectangle {
             }
             Text {
                 text: root.date;
-                font-size: Theme.font-sm;
-                font-weight: 600;
-                color: root.paused ? Theme.muted : Theme.text;
+                font-size: Theme.font-xs;
+                color: Theme.muted;
                 horizontal-alignment: right;
                 overflow: elide;
             }

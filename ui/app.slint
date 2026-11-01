@@ -192,6 +192,15 @@ component ListColumn inherits VerticalLayout {
                     }
                 }
             }
+            if root.rows.length > 0: HorizontalLayout {
+                height: 32px;
+                padding-left: 12px;
+                padding-right: 48px;
+                spacing: 12px;
+                Text { text: "ПОДПИСКА"; color: Theme.muted; font-size: 11px; horizontal-stretch: 1; }
+                Text { text: "СЛЕДУЮЩИЙ ПЛАТЁЖ"; color: Theme.muted; font-size: 11px; width: 120px; horizontal-alignment: right; }
+                Text { text: "СУММА"; color: Theme.muted; font-size: 11px; width: 96px; horizontal-alignment: right; }
+            }
             if root.rows.length > 0: ListView {
                 vertical-stretch: 1;
                 for row in root.rows: SubscriptionRowView {
@@ -207,6 +216,9 @@ component ListColumn inherits VerticalLayout {
                     balance-text: row.balance-text;
                     balance-short: row.balance-short;
                     badge: row.badge;
+                    can-topup: row.can-topup;
+                    pause => { root.pause(row.id); }
+                    topup => { root.topup(row.id); }
                     edit => { root.edit(row.id); }
                     remove => { root.remove(row.id); }
                 }
@@ -246,7 +258,7 @@ component SideColumn inherits Rectangle {
             padding: Theme.s16;
             spacing: Theme.s8;
             Text {
-                text: "Требует внимания";
+                text: root.balances.length > 0 ? "Нужно пополнить · " + root.balances.length : "Всё в порядке";
                 font-size: Theme.font-md;
                 font-weight: 600;
                 color: Theme.text;
@@ -284,7 +296,7 @@ component SideColumn inherits Rectangle {
                             text: item.amount;
                             font-size: Theme.font-sm;
                             font-weight: 600;
-                            font-family: "Courier New";
+                            font-family: "Segoe UI";
                             color: Theme.danger;
                             horizontal-alignment: right;
                         }
@@ -313,7 +325,7 @@ component SideColumn inherits Rectangle {
             padding: Theme.s16;
             spacing: Theme.s12;
             Text {
-                text: "По категориям";
+                text: "Структура расходов";
                 font-size: Theme.font-md;
                 font-weight: 600;
                 color: Theme.text;
@@ -346,7 +358,7 @@ component SideColumn inherits Rectangle {
                     Text {
                         text: item.percent;
                         font-size: Theme.font-xs;
-                        font-family: "Courier New";
+                        font-family: "Segoe UI";
                         color: Theme.muted;
                         horizontal-alignment: right;
                     }
@@ -354,7 +366,7 @@ component SideColumn inherits Rectangle {
                         text: item.amount;
                         font-size: Theme.font-sm;
                         font-weight: 600;
-                        font-family: "Courier New";
+                        font-family: "Segoe UI";
                         color: Theme.text;
                         horizontal-alignment: right;
                     }
@@ -364,6 +376,7 @@ component SideColumn inherits Rectangle {
                     border-radius: Theme.s4;
                     background: Theme.surface-2;
                     Rectangle {
+                        x: 0px;
                         width: max(parent.width * item.share, Theme.s4);
                         height: parent.height;
                         border-radius: Theme.s4;
@@ -412,7 +425,7 @@ component SideColumn inherits Rectangle {
                         width: 32px;
                         height: 32px;
                         border-radius: Theme.radius-sm;
-                        background: cell.today ? Theme.surface-2 : transparent;
+                        background: cell.today ? Theme.accent : transparent;
                         VerticalLayout {
                             alignment: start;
                             padding-top: 2px;
@@ -420,8 +433,8 @@ component SideColumn inherits Rectangle {
                             Text {
                                 text: cell.label;
                                 font-size: Theme.font-xs;
-                                font-family: "Courier New";
-                                color: cell.dim ? transparent : Theme.text;
+                                font-family: "Segoe UI";
+                                color: cell.dim ? transparent : (cell.today ? Theme.on-accent : Theme.text);
                                 horizontal-alignment: left;
                             }
                         }
@@ -448,7 +461,7 @@ export component MainWindow inherits Window {
     preferred-height: Theme.window-h;
     min-width: Theme.window-min-w;
     min-height: Theme.window-min-h;
-    background: Theme.dark ? @linear-gradient(165deg, #243049 0%, #141824 42%, #101218 100%) : @linear-gradient(180deg, #f7f8fc 0%, #e6e8f0 100%);
+    background: Theme.page;
     default-font-family: "Segoe UI";
     default-font-size: Theme.font-md;
 
@@ -598,37 +611,26 @@ export component MainWindow inherits Window {
         Rectangle {
             width: parent.width;
             height: parent.height;
-            background: Theme.dark ? @linear-gradient(165deg, #243049 0%, #141824 42%, #101218 100%) : @linear-gradient(180deg, #f7f8fc 0%, #e6e8f0 100%);
-
-            Rectangle {
-                x: parent.width - 320px;
-                y: -120px;
-                width: 420px;
-                height: 420px;
-                border-radius: 210px;
-                background: Theme.dark ? #3d7eff16 : #3d7eff10;
-            }
+            background: Theme.page;
 
             VerticalLayout {
-                padding: Theme.s16;
-                spacing: Theme.s16;
+                padding: Theme.s24;
+                spacing: Theme.s24;
 
                 HorizontalLayout {
                     spacing: Theme.s12;
                     cross-axis-alignment: center;
-                    Text {
-                        text: "Подписки";
-                        font-size: Theme.font-xl;
-                        font-weight: 700;
-                        color: Theme.text;
-                        vertical-alignment: center;
+                    VerticalLayout {
+                        spacing: 4px;
+                        Text { text: "Мои подписки"; font-size: Theme.font-xl; font-weight: 700; color: Theme.text; }
+                        Text { text: "Все расходы и ближайшие списания"; font-size: Theme.font-sm; color: Theme.muted; }
                     }
                     Rectangle { horizontal-stretch: 1; }
                     search-field := SearchField {
                         text <=> root.query;
                     }
                     PrimaryButton {
-                        label: "+ Добавить";
+                        label: "+ Новая подписка";
                         clicked => { root.open-form(); }
                     }
                     SettingsButton {
@@ -646,8 +648,8 @@ export component MainWindow inherits Window {
 
                 HorizontalLayout {
                     spacing: Theme.s12;
-                    SummaryCard { caption: "В месяц"; value: root.monthly; }
-                    SummaryCard { caption: "В год"; value: root.yearly; }
+                    SummaryCard { caption: "Ежемесячные расходы"; value: root.monthly; featured: true; }
+                    SummaryCard { caption: "Расходы за год"; value: root.yearly; }
                     PeriodCard {
                         value: root.horizon-total;
                         index: root.horizon-index;
@@ -738,7 +740,7 @@ export component MainWindow inherits Window {
                 }
 
                 Text {
-                    text: "Данные хранятся только на этом компьютере";
+                    text: "Хранится на этом компьютере     •     Ctrl+N — новая подписка     •     Ctrl+F — поиск";
                     font-size: Theme.font-xs;
                     color: Theme.muted;
                 }
