@@ -1,0 +1,45 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Select stable Rust
+        run: rustup default stable
+      - name: Verify version and release notes
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"').Matches.Groups[1].Value
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw "Tag must match Cargo.toml version" }
+          if (!(Test-Path "docs/releases/$env:GITHUB_REF_NAME.md")) { throw "Release notes are missing" }
+      - name: Test
+        run: cargo test --locked
+      - name: Build
+        run: cargo build --release --locked
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "TrackPurchase-$env:GITHUB_REF_NAME-windows-x64"
+          New-Item -ItemType Directory -Path "dist/$name" -Force | Out-Null
+          Copy-Item target/release/trackpurchase.exe, README.md, CHANGELOG.md -Destination "dist/$name"
+          Copy-Item docs -Destination "dist/$name/docs" -Recurse
+          Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
+          $hash = (Get-FileHash "dist/$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name.zip" | Set-Content dist/SHA256SUMS.txt -Encoding utf8
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" "dist/TrackPurchase-$env:GITHUB_REF_NAME-windows-x64.zip" dist/SHA256SUMS.txt --verify-tag --draft --title "TrackPurchase $env:GITHUB_REF_NAME" --notes-file "docs/releases/$env:GITHUB_REF_NAME.md"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

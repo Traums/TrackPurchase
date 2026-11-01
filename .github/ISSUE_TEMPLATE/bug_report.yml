@@ -1,0 +1,30 @@
+name: Ошибка
+description: Сообщить о проблеме в приложении
+title: "[Bug]: "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Версия приложения и Windows
+      placeholder: "v0.1.0, Windows 11 x64"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемый результат
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Фактический результат
+      description: Текст ошибки или скриншот без личных данных.
+    validations:
+      required: true

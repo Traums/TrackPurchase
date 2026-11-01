@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Руководство пользователя
+    url: https://github.com/Traums/TrackPurchase/blob/main/docs/USER_GUIDE.md
+    about: Установка, подписки и перенос данных
