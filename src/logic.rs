@@ -70,6 +70,13 @@ pub struct Subscription {
     pub balance: f64,
     #[serde(default)]
     pub created_at: String,
+    /// Отрицательное значение — цвет значка берётся из названия. Иначе свой цвет, отдельно от категории.
+    #[serde(default = "unset_channel")]
+    pub icon_r: i16,
+    #[serde(default = "unset_channel")]
+    pub icon_g: i16,
+    #[serde(default = "unset_channel")]
+    pub icon_b: i16,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -137,6 +144,7 @@ pub struct FormDraft {
     pub active: bool,
     pub source_index: i32,
     pub balance: String,
+    pub icon_index: i32,
 }
 
 pub struct FormCheck {
@@ -153,6 +161,7 @@ pub struct ViewQuery {
     pub filter: ListFilter,
     pub sort: SortMode,
     pub category: Option<String>,
+    pub horizon_days: i64,
 }
 
 pub struct RowView {
@@ -160,15 +169,20 @@ pub struct RowView {
     pub name: String,
     pub detail: String,
     pub when: String,
+    pub date: String,
     pub price: String,
     pub letter: String,
     pub pause_label: String,
     pub balance: String,
+    pub balance_short: bool,
+    pub badge: String,
     pub can_topup: bool,
     pub rgb: (u8, u8, u8),
+    pub category_rgb: (u8, u8, u8),
     pub paused: bool,
 }
 
+#[allow(dead_code)]
 pub struct TimelineItem {
     pub header: bool,
     pub label: String,
@@ -181,23 +195,39 @@ pub struct BalanceLine {
     pub amount: String,
     pub until: String,
     pub detail: String,
+    pub short: bool,
+}
+
+pub struct DayCell {
+    pub label: String,
+    pub marked: bool,
+    pub today: bool,
+    pub dim: bool,
 }
 
 pub struct CategoryShare {
     pub name: String,
     pub amount: String,
     pub share: f32,
+    pub percent: String,
     pub rgb: (u8, u8, u8),
 }
 
 pub struct Dashboard {
     pub monthly: String,
     pub yearly: String,
+    #[allow(dead_code)]
     pub due: String,
+    #[allow(dead_code)]
+    pub month_left: String,
+    pub horizon_total: String,
     pub active_count: String,
     pub rows: Vec<RowView>,
+    #[allow(dead_code)]
     pub timeline: Vec<TimelineItem>,
     pub categories: Vec<CategoryShare>,
+    pub month_title: String,
+    pub month_weeks: Vec<Vec<DayCell>>,
     pub empty: bool,
     pub no_results: bool,
     pub hint: String,
@@ -207,6 +237,21 @@ pub struct Dashboard {
 fn default_true() -> bool {
     true
 }
+
+fn unset_channel() -> i16 {
+    -1
+}
+
+pub const ICON_CHOICES: [(u8, u8, u8); 8] = [
+    (61, 126, 255),
+    (62, 207, 142),
+    (255, 93, 99),
+    (224, 138, 60),
+    (168, 120, 255),
+    (58, 160, 168),
+    (212, 83, 126),
+    (196, 163, 90),
+];
 
 fn default_currency() -> String {
     "RUB".into()
@@ -602,7 +647,38 @@ pub fn subscription_from_form(
             .map(|item| item.created_at.clone())
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| chrono::Local::now().to_rfc3339()),
+        icon_r: icon_channels(draft.icon_index).0,
+        icon_g: icon_channels(draft.icon_index).1,
+        icon_b: icon_channels(draft.icon_index).2,
     })
+}
+
+fn icon_channels(index: i32) -> (i16, i16, i16) {
+    usize::try_from(index - 1)
+        .ok()
+        .and_then(|index| ICON_CHOICES.get(index))
+        .map(|color| (i16::from(color.0), i16::from(color.1), i16::from(color.2)))
+        .unwrap_or((-1, -1, -1))
+}
+
+pub fn icon_index(item: &Subscription) -> i32 {
+    ICON_CHOICES
+        .iter()
+        .position(|color| i16::from(color.0) == item.icon_r && i16::from(color.1) == item.icon_g && i16::from(color.2) == item.icon_b)
+        .map(|index| index as i32 + 1)
+        .unwrap_or(0)
+}
+
+pub fn icon_rgb(item: &Subscription) -> (u8, u8, u8) {
+    if item.icon_r >= 0 && item.icon_g >= 0 && item.icon_b >= 0 {
+        return (item.icon_r as u8, item.icon_g as u8, item.icon_b as u8);
+    }
+    let mut hash: u32 = 2_166_136_261;
+    for byte in item.name.trim().to_lowercase().bytes() {
+        hash ^= u32::from(byte);
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    hsl_to_rgb((hash % 360) as f32, 0.58, 0.56)
 }
 
 pub fn parse_rate(raw: &str) -> Result<f64, String> {
@@ -671,6 +747,7 @@ pub fn compose(items: &[Subscription], view: &ViewQuery, today: NaiveDate, setti
         .filter(|(_, amount)| *amount > 0.0)
         .map(|(name, amount)| CategoryShare {
             share: if monthly > 0.0 { (amount / monthly) as f32 } else { 0.0 },
+            percent: format!("{}%", if monthly > 0.0 { (amount / monthly * 100.0).round() as i32 } else { 0 }),
             rgb: category_rgb(&name, settings),
             amount: format_money(amount, base),
             name,
@@ -684,7 +761,8 @@ pub fn compose(items: &[Subscription], view: &ViewQuery, today: NaiveDate, setti
         .collect();
     visible.sort_by(|left, right| compare_items(left, right, view.sort, settings));
 
-    let balances = balance_lines(items, today);
+    let balances = balance_lines(items, today).into_iter().filter(|line| line.short).collect::<Vec<_>>();
+    let month_weeks = month_weeks(items, today);
     let rows = visible.iter().map(|item| row_view(item, today, settings)).collect::<Vec<_>>();
     let empty = items.is_empty();
     let no_results = !empty && rows.is_empty() && !view.text.trim().is_empty();
@@ -706,10 +784,14 @@ pub fn compose(items: &[Subscription], view: &ViewQuery, today: NaiveDate, setti
         monthly: format_money(monthly, base),
         yearly: format_money(monthly * 12.0, base),
         due: format_money(due, base),
+        month_left: format_money(month_remaining(items, today, settings), base),
+        horizon_total: format_money(window_total(items, today, settings, view.horizon_days), base),
         active_count: active_n.to_string(),
         rows,
         timeline,
         categories,
+        month_title: month_title(today),
+        month_weeks,
         empty,
         no_results,
         hint,
@@ -822,12 +904,19 @@ fn balance_lines(items: &[Subscription], today: NaiveDate) -> Vec<BalanceLine> {
                 amount: format_money(finite_balance(item.balance), &item.currency),
                 until: forecast.until,
                 detail: forecast.detail,
+                short: item.active && shortage_cents(item) > 0,
             };
             (forecast.sort_on, line)
         })
         .collect();
     lines.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.name.cmp(&right.1.name)));
     lines.into_iter().map(|(_, line)| line).take(8).collect()
+}
+
+fn shortage_cents(item: &Subscription) -> i64 {
+    let charge = money_cents(item.amount).max(0);
+    let balance = money_cents(finite_balance(item.balance)).max(0);
+    (charge - balance).max(0)
 }
 
 fn money_cents(amount: f64) -> i64 {
@@ -841,16 +930,43 @@ fn cents_to_amount(cents: i64) -> f64 {
     cents as f64 / 100.0
 }
 
-pub fn charge_dates(next_charge: &str, period: &str, today: NaiveDate) -> Vec<NaiveDate> {
+fn month_remaining(items: &[Subscription], today: NaiveDate, settings: &Settings) -> f64 {
+    let last = NaiveDate::from_ymd_opt(today.year(), today.month(), last_day_of_month(today.year(), today.month())).unwrap_or(today);
+    let rates = settings.rates();
+    items
+        .iter()
+        .filter(|item| item.active)
+        .map(|item| {
+            charges_through(&item.next_charge, &item.period, today, last).len() as f64
+                * to_base(item.amount, &item.currency, &settings.base, &rates)
+        })
+        .sum()
+}
+
+fn window_total(items: &[Subscription], today: NaiveDate, settings: &Settings, days: i64) -> f64 {
+    let days = match days {
+        7 => 7,
+        360 => 360,
+        _ => DUE_WINDOW_DAYS,
+    };
+    let rates = settings.rates();
+    items
+        .iter()
+        .filter(|item| item.active)
+        .map(|item| {
+            charge_dates_for(&item.next_charge, &item.period, today, days).len() as f64
+                * to_base(item.amount, &item.currency, &settings.base, &rates)
+        })
+        .sum()
+}
+
+fn charges_through(next_charge: &str, period: &str, today: NaiveDate, last: NaiveDate) -> Vec<NaiveDate> {
     let Some(start) = parse_date(next_charge) else {
         return Vec::new();
     };
-    // Окно — 30 суток, начиная с сегодня. День ровно через 30 суток уже следующий период:
-    // 1 ноября + 30 дней = 1 декабря, и месячная подписка не должна попасть в сумму дважды.
-    let horizon = today + chrono::Duration::days(DUE_WINDOW_DAYS);
     let mut cursor = advance_until(start, period, today);
     let mut dates = Vec::new();
-    while cursor < horizon && dates.len() < 36 {
+    while cursor <= last && dates.len() < 80 {
         dates.push(cursor);
         let next = add_period(cursor, period);
         if next <= cursor {
@@ -859,6 +975,41 @@ pub fn charge_dates(next_charge: &str, period: &str, today: NaiveDate) -> Vec<Na
         cursor = next;
     }
     dates
+}
+
+pub fn charge_dates(next_charge: &str, period: &str, today: NaiveDate) -> Vec<NaiveDate> {
+    charge_dates_for(next_charge, period, today, DUE_WINDOW_DAYS)
+}
+
+fn charge_dates_for(next_charge: &str, period: &str, today: NaiveDate, days: i64) -> Vec<NaiveDate> {
+    let Some(start) = parse_date(next_charge) else {
+        return Vec::new();
+    };
+    // Окно начинается сегодня и не включает день ровно через N суток.
+    // Для 30 дней: 1 ноября + 30 дней = 1 декабря, месячная подписка не считается дважды.
+    let horizon = today + chrono::Duration::days(days.max(1));
+    let mut cursor = advance_until(start, period, today);
+    let mut dates = Vec::new();
+    while cursor < horizon && dates.len() < 60 {
+        dates.push(cursor);
+        let next = add_period(cursor, period);
+        if next <= cursor {
+            break;
+        }
+        cursor = next;
+    }
+    dates
+}
+
+#[allow(dead_code)]
+pub fn mark_paid(item: &mut Subscription, today: NaiveDate) {
+    let start = parse_date(&item.next_charge).unwrap_or(today);
+    let base = if start < today { advance_until(start, &item.period, today) } else { start };
+    item.next_charge = add_period(base, &item.period).format("%Y-%m-%d").to_string();
+    if item.source == "balance" {
+        let left = finite_balance(item.balance) - finite_balance(item.amount);
+        item.balance = if left.is_finite() && left > 0.0 { (left * 100.0).round() / 100.0 } else { 0.0 };
+    }
 }
 
 pub fn add_period(date: NaiveDate, period: &str) -> NaiveDate {
@@ -947,26 +1098,30 @@ fn period_label(period: &str) -> &'static str {
 }
 
 fn row_view(item: &Subscription, today: NaiveDate, settings: &Settings) -> RowView {
-    let when = match parse_date(&item.next_charge) {
-        Some(date) if item.active => format!("{} · {}", format_day(date, today), when_label(date, today)),
-        Some(date) => format!("на паузе · {}", format_day(date, today)),
-        None => "Проверьте дату".into(),
+    let (when, date_label) = match parse_date(&item.next_charge) {
+        Some(date) if item.active => (title_when(date, today), format_day(date, today)),
+        Some(date) => ("На паузе".into(), format_day(date, today)),
+        None => ("Проверьте дату".into(), String::new()),
     };
     let mut detail = format!("{} · {}", period_label(&item.period), item.category);
     if item.currency != settings.base {
         detail.push_str(" · ");
         detail.push_str(&format_money(item.amount, &item.currency));
     }
-    let (balance, can_topup) = if item.source == "balance" {
-        let forecast = service_forecast(item, today);
-        detail.push_str(" · ");
-        detail.push_str(&forecast.until);
+    let (balance, balance_short, badge, can_topup) = if item.source == "balance" {
+        let short = shortage_cents(item);
         (
             format!("Баланс {}", format_money(finite_balance(item.balance), &item.currency)),
+            short > 0,
+            if item.active && short > 0 {
+                format!("Не хватает {}", format_money(cents_to_amount(short), &item.currency))
+            } else {
+                String::new()
+            },
             true,
         )
     } else {
-        (String::new(), false)
+        (String::new(), false, String::new(), false)
     };
     if !item.note.trim().is_empty() {
         detail.push_str(" · ");
@@ -981,14 +1136,71 @@ fn row_view(item: &Subscription, today: NaiveDate, settings: &Settings) -> RowVi
         name: item.name.clone(),
         detail,
         when,
+        date: date_label,
         price,
         letter: initial(&item.name),
         pause_label: if item.active { "Пауза" } else { "Включить" }.into(),
         balance,
+        balance_short,
+        badge,
         can_topup,
-        rgb: category_rgb(&item.category, settings),
+        rgb: icon_rgb(item),
+        category_rgb: category_rgb(&item.category, settings),
         paused: !item.active,
     }
+}
+
+fn month_title(today: NaiveDate) -> String {
+    const NAMES: [&str; 12] = [
+        "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+    ];
+    format!("{} {}", NAMES[today.month0() as usize], today.year())
+}
+
+fn month_weeks(items: &[Subscription], today: NaiveDate) -> Vec<Vec<DayCell>> {
+    let first = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap_or(today);
+    let last = NaiveDate::from_ymd_opt(today.year(), today.month(), last_day_of_month(today.year(), today.month())).unwrap_or(today);
+    let mut marked = std::collections::BTreeSet::new();
+    for item in items.iter().filter(|item| item.active) {
+        let Some(start) = parse_date(&item.next_charge) else {
+            continue;
+        };
+        let mut cursor = advance_until(start, &item.period, today);
+        for _ in 0..40 {
+            if cursor > last {
+                break;
+            }
+            if cursor >= first {
+                marked.insert(cursor);
+            }
+            let next = add_period(cursor, &item.period);
+            if next <= cursor {
+                break;
+            }
+            cursor = next;
+        }
+    }
+    let mut cursor = first - chrono::Duration::days(first.weekday().num_days_from_monday() as i64);
+    let mut weeks = Vec::new();
+    for _ in 0..6 {
+        let mut week = Vec::new();
+        for _ in 0..7 {
+            let in_month = cursor.year() == today.year() && cursor.month() == today.month();
+            week.push(DayCell {
+                label: if in_month { cursor.day().to_string() } else { String::new() },
+                marked: marked.contains(&cursor),
+                today: cursor == today,
+                dim: !in_month,
+            });
+            cursor += chrono::Duration::days(1);
+        }
+        let finished = cursor > last;
+        weeks.push(week);
+        if finished {
+            break;
+        }
+    }
+    weeks
 }
 
 fn group_timeline(events: Vec<(NaiveDate, String, String)>, today: NaiveDate) -> Vec<TimelineItem> {
@@ -1054,6 +1266,15 @@ fn format_day(date: NaiveDate, today: NaiveDate) -> String {
         format!("{} {month}", date.day())
     } else {
         format!("{} {month} {}", date.day(), date.year())
+    }
+}
+
+fn title_when(date: NaiveDate, today: NaiveDate) -> String {
+    let label = when_label(date, today);
+    let mut chars = label.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
     }
 }
 
@@ -1358,6 +1579,9 @@ fn parse_csv(text: &str) -> Result<Vec<Subscription>, String> {
                 .and_then(|raw| parse_balance(raw).ok())
                 .unwrap_or(0.0),
             created_at: cell(&row, created.unwrap_or(usize::MAX)).unwrap_or("").to_string(),
+            icon_r: -1,
+            icon_g: -1,
+            icon_b: -1,
         });
     }
     if items.is_empty() {
@@ -1477,6 +1701,9 @@ mod tests {
             source: "card".into(),
             balance: 0.0,
             created_at: String::new(),
+            icon_r: -1,
+            icon_g: -1,
+            icon_b: -1,
         }
     }
 
@@ -1549,6 +1776,7 @@ mod tests {
             filter: ListFilter::Active,
             sort: SortMode::Date,
             category: None,
+            horizon_days: 30,
         };
         let summary = compose(&items, &view, today, &Settings::default());
         assert_eq!(summary.monthly, "800 ₽");
@@ -1587,6 +1815,7 @@ mod tests {
             filter: ListFilter::Active,
             sort: SortMode::Date,
             category: None,
+            horizon_days: 30,
         };
         let summary = compose(&items, &view, date(2026, 10, 31), &settings);
         assert_eq!(summary.monthly, "900 ₽");
@@ -1601,6 +1830,7 @@ mod tests {
             filter: ListFilter::Active,
             sort: SortMode::Date,
             category: None,
+            horizon_days: 30,
         };
         let summary = compose(&items, &view, date(2026, 10, 31), &Settings::default());
         assert_eq!(summary.monthly, "100 ₽");
@@ -1623,10 +1853,39 @@ mod tests {
             filter: ListFilter::Active,
             sort: SortMode::Date,
             category: None,
+            horizon_days: 30,
         };
         let summary = compose(&items, &view, date(2026, 10, 31), &Settings::default());
         assert_eq!(summary.due, "500 ₽");
         assert_eq!(summary.yearly, "5 200 ₽");
+    }
+
+    #[test]
+    fn month_left_stops_at_the_end_of_the_month() {
+        let today = date(2026, 11, 15);
+        let items = vec![Subscription {
+            amount: 100.0,
+            period: "weekly".into(),
+            next_charge: "2026-11-15".into(),
+            ..sample()
+        }];
+        let view = ViewQuery {
+            text: String::new(),
+            filter: ListFilter::Active,
+            sort: SortMode::Date,
+            category: None,
+            horizon_days: 30,
+        };
+        let summary = compose(&items, &view, today, &Settings::default());
+        assert_eq!(summary.month_left, "300 ₽");
+        assert_eq!(summary.due, "500 ₽");
+        let week = compose(
+            &items,
+            &ViewQuery { horizon_days: 7, ..view },
+            today,
+            &Settings::default(),
+        );
+        assert_eq!(week.horizon_total, "100 ₽");
     }
 
     #[test]
@@ -1685,6 +1944,17 @@ mod tests {
         .expect("json");
         assert_eq!(item.source, "card");
         assert_eq!(item.balance, 0.0);
+        assert_eq!(item.icon_r, -1);
+        let hashed = icon_rgb(&item);
+        let mut painted = item.clone();
+        painted.icon_r = 12;
+        painted.icon_g = 34;
+        painted.icon_b = 56;
+        assert_eq!(icon_rgb(&painted), (12, 34, 56));
+        assert_ne!(icon_rgb(&painted), hashed);
+        let mut other = item.clone();
+        other.name = "Другое имя".into();
+        assert_ne!(icon_rgb(&item), icon_rgb(&other));
         let settings: Settings = serde_json::from_str(r#"{"dark":false,"balance":500}"#).expect("settings");
         assert!(!sanitize_settings(settings).dark);
         assert_eq!(parse_balance("").expect("empty"), 0.0);
@@ -1827,5 +2097,60 @@ mod tests {
         let forecast = service_forecast(&item, date(2026, 11, 1));
         assert_eq!(forecast.until, "Баланс пуст");
         assert!(forecast.detail.contains("100"), "{}", forecast.detail);
+    }
+
+    #[test]
+    fn paid_moves_the_date_and_spends_that_service_balance() {
+        let mut card = Subscription {
+            amount: 800.0,
+            period: "monthly".into(),
+            next_charge: "2026-11-01".into(),
+            source: "card".into(),
+            balance: 500.0,
+            ..sample()
+        };
+        mark_paid(&mut card, date(2026, 11, 1));
+        assert_eq!(card.next_charge, "2026-12-01");
+        assert_eq!(card.balance, 500.0);
+
+        let mut wallet = Subscription {
+            amount: 800.0,
+            period: "monthly".into(),
+            next_charge: "2026-11-01".into(),
+            source: "balance".into(),
+            balance: 2_000.0,
+            ..sample()
+        };
+        mark_paid(&mut wallet, date(2026, 11, 1));
+        assert_eq!(wallet.next_charge, "2026-12-01");
+        assert_eq!(wallet.balance, 1_200.0);
+
+        let mut short = wallet.clone();
+        short.balance = 551.0;
+        short.next_charge = "2026-12-01".into();
+        mark_paid(&mut short, date(2026, 12, 1));
+        assert_eq!(short.balance, 0.0);
+        assert_eq!(short.next_charge, "2027-01-01");
+    }
+
+    #[test]
+    fn month_calendar_marks_only_this_month() {
+        let today = date(2026, 11, 1);
+        let items = vec![Subscription {
+            amount: 800.0,
+            period: "weekly".into(),
+            next_charge: "2026-11-01".into(),
+            ..sample()
+        }];
+        let weeks = month_weeks(&items, today);
+        let marked = weeks
+            .iter()
+            .flatten()
+            .filter(|cell| cell.marked)
+            .map(|cell| cell.label.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(marked, ["1", "8", "15", "22", "29"]);
+        assert_eq!(month_title(today), "Ноябрь 2026");
+        assert!(weeks[0][6].today);
     }
 }

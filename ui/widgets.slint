@@ -1,5 +1,185 @@
-import { LineEdit } from "std-widgets.slint";
+import { LineEdit, Slider } from "std-widgets.slint";
 import { Theme } from "theme.slint";
+
+export component TrashGlyph inherits Rectangle {
+    width: 16px;
+    height: 16px;
+    in property <color> ink: Theme.danger;
+
+    Rectangle {
+        x: 4px;
+        y: 0px;
+        width: 8px;
+        height: 2px;
+        border-radius: 1px;
+        background: root.ink;
+    }
+    Rectangle {
+        y: 3px;
+        width: 16px;
+        height: 1.5px;
+        border-radius: 1px;
+        background: root.ink;
+    }
+    Rectangle {
+        x: 2px;
+        y: 6px;
+        width: 12px;
+        height: 9px;
+        border-radius: 2px;
+        border-width: 1.5px;
+        border-color: root.ink;
+    }
+    Rectangle {
+        x: 6px;
+        y: 8px;
+        width: 1.5px;
+        height: 5px;
+        background: root.ink;
+    }
+    Rectangle {
+        x: 9px;
+        y: 8px;
+        width: 1.5px;
+        height: 5px;
+        background: root.ink;
+    }
+}
+
+export component SearchGlyph inherits Rectangle {
+    width: 14px;
+    height: 14px;
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: 9px;
+        height: 9px;
+        border-radius: 5px;
+        border-width: 1.5px;
+        border-color: Theme.muted;
+    }
+    Rectangle {
+        x: 7px;
+        y: 8px;
+        width: 6px;
+        height: 1.5px;
+        border-radius: 1px;
+        background: Theme.muted;
+        transform-rotation: -40deg;
+    }
+}
+
+export component GearGlyph inherits Rectangle {
+    width: 14px;
+    height: 14px;
+    Rectangle {
+        width: 14px;
+        height: 2px;
+        y: 6px;
+        border-radius: 1px;
+        background: Theme.text;
+    }
+    Rectangle {
+        width: 2px;
+        height: 14px;
+        x: 6px;
+        border-radius: 1px;
+        background: Theme.text;
+    }
+    Rectangle {
+        x: 2px;
+        y: 2px;
+        width: 10px;
+        height: 10px;
+        border-radius: 5px;
+        border-width: 1.5px;
+        border-color: Theme.text;
+        background: Theme.surface;
+    }
+    Rectangle {
+        x: 4px;
+        y: 4px;
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: Theme.text;
+    }
+}
+
+export component SearchField inherits Rectangle {
+    in-out property <string> text;
+    horizontal-stretch: 0;
+    width: Theme.search;
+    height: Theme.control;
+    border-radius: Theme.radius;
+    background: Theme.surface-2;
+    border-width: Theme.hairline;
+    border-color: input.has-focus ? Theme.accent : Theme.line;
+    animate background { duration: Theme.motion; }
+    animate border-color { duration: Theme.motion; }
+
+    if root.text == "": Text {
+        x: 34px;
+        height: parent.height;
+        text: "Поиск";
+        font-size: Theme.font-sm;
+        color: Theme.muted;
+        vertical-alignment: center;
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.s12;
+        padding-right: Theme.s12;
+        spacing: Theme.s8;
+        cross-axis-alignment: center;
+        SearchGlyph { }
+        input := TextInput {
+            text <=> root.text;
+            font-size: Theme.font-sm;
+            color: Theme.text;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+
+    public function focus-input() {
+        input.focus();
+    }
+}
+
+export component SettingsButton inherits Rectangle {
+    in property <string> label;
+    callback clicked();
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    height: Theme.control;
+    border-radius: Theme.radius;
+    background: area.has-hover ? Theme.surface-2 : Theme.surface;
+    border-width: Theme.hairline;
+    border-color: Theme.line;
+    animate background { duration: Theme.motion; }
+    animate border-color { duration: Theme.motion; }
+
+    HorizontalLayout {
+        padding-left: Theme.s12;
+        padding-right: Theme.s12;
+        spacing: Theme.s8;
+        alignment: center;
+        cross-axis-alignment: center;
+        GearGlyph { }
+        Text {
+            text: root.label;
+            font-size: Theme.font-sm;
+            color: Theme.text;
+            vertical-alignment: center;
+        }
+    }
+
+    area := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
 
 export component Card inherits Rectangle {
     background: Theme.surface;
@@ -11,6 +191,117 @@ export component Card inherits Rectangle {
     drop-shadow-offset-y: Theme.shadow-y;
     animate background { duration: Theme.motion; }
     animate border-color { duration: Theme.motion; }
+}
+
+component Segment inherits Rectangle {
+    in property <string> label;
+    in property <bool> on;
+    callback clicked();
+    horizontal-stretch: 0;
+    vertical-stretch: 1;
+    border-radius: Theme.radius-sm;
+    background: root.on ? Theme.accent : transparent;
+    animate background { duration: Theme.motion; }
+
+    HorizontalLayout {
+        padding-left: Theme.s12;
+        padding-right: Theme.s12;
+        alignment: center;
+        cross-axis-alignment: center;
+        Text {
+            text: root.label;
+            font-size: Theme.font-sm;
+            font-weight: root.on ? 600 : 400;
+            color: root.on ? Theme.on-accent : Theme.text;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component StatusSwitch inherits Rectangle {
+    in property <int> current;
+    callback selected(int);
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    height: Theme.control;
+    border-radius: Theme.radius;
+    background: Theme.surface-2;
+    border-width: Theme.hairline;
+    border-color: Theme.line;
+
+    HorizontalLayout {
+        padding: 3px;
+        spacing: 2px;
+        Segment { label: "Активные"; on: root.current == 1; clicked => { root.selected(1); } }
+        Segment { label: "Все"; on: root.current == 0; clicked => { root.selected(0); } }
+        Segment { label: "Пауза"; on: root.current == 2; clicked => { root.selected(2); } }
+    }
+}
+
+export component PeriodCard inherits Card {
+    in property <string> value;
+    in property <int> index;
+    callback changed(int);
+    horizontal-stretch: 1;
+    min-width: 0px;
+    height: Theme.card-h;
+
+    property <string> caption: root.index == 0 ? "За 7 дней" : (root.index == 2 ? "За 360 дней" : "За 30 дней");
+
+    VerticalLayout {
+        padding-left: Theme.s16;
+        padding-right: Theme.s16;
+        padding-top: Theme.s12;
+        padding-bottom: Theme.s8;
+        spacing: Theme.s4;
+        alignment: start;
+        Text {
+            text: root.caption;
+            font-size: Theme.font-xs;
+            color: Theme.muted;
+        }
+        Text {
+            text: root.value;
+            font-size: Theme.font-xl;
+            font-weight: 600;
+            font-family: "Courier New";
+            color: Theme.text;
+            overflow: elide;
+        }
+        Slider {
+            minimum: 0;
+            maximum: 2;
+            step: 1;
+            value: root.index;
+            changed(position) => { root.changed(Math.round(position)); }
+        }
+        HorizontalLayout {
+            Text {
+                text: "7";
+                font-size: Theme.font-xs;
+                color: root.index == 0 ? Theme.accent : Theme.muted;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: "30";
+                font-size: Theme.font-xs;
+                color: root.index == 1 ? Theme.accent : Theme.muted;
+                horizontal-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: "360";
+                font-size: Theme.font-xs;
+                color: root.index == 2 ? Theme.accent : Theme.muted;
+                horizontal-alignment: right;
+            }
+        }
+    }
 }
 
 export component Chip inherits Rectangle {
@@ -86,6 +377,39 @@ export component PrimaryButton inherits Rectangle {
 
     area := TouchArea {
         enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component SecondaryButton inherits Rectangle {
+    in property <string> label;
+    callback clicked();
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    height: Theme.s32;
+    border-radius: Theme.radius-sm;
+    background: area.has-hover ? Theme.surface-2 : Theme.surface;
+    border-width: Theme.hairline;
+    border-color: area.has-hover ? Theme.muted : Theme.line;
+    animate background { duration: Theme.motion; }
+    animate border-color { duration: Theme.motion; }
+
+    HorizontalLayout {
+        padding-left: Theme.s12;
+        padding-right: Theme.s12;
+        alignment: center;
+        cross-axis-alignment: center;
+        Text {
+            text: root.label;
+            font-size: Theme.font-xs;
+            font-weight: 600;
+            color: Theme.text;
+            vertical-alignment: center;
+        }
+    }
+
+    area := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
@@ -190,41 +514,45 @@ export component SubscriptionRowView inherits Rectangle {
     in property <string> name;
     in property <string> detail;
     in property <string> when;
+    in property <string> date;
     in property <string> price;
     in property <string> letter;
     in property <color> swatch;
+    in property <color> category-swatch;
     in property <bool> paused;
-    in property <bool> confirming;
-    in property <string> pause-label;
     in property <string> balance-text;
-    in property <bool> can-topup;
+    in property <bool> balance-short;
+    in property <string> badge;
     callback edit();
-    callback topup();
-    callback pause();
-    callback ask();
     callback remove();
-    callback cancel();
     background: root.hot ? Theme.surface-2 : transparent;
     animate background { duration: Theme.motion; }
 
-    property <bool> hot: area.has-hover || edit-b.has-hover || pause-b.has-hover || delete-b.has-hover || topup-b.has-hover;
+    property <bool> hot: area.has-hover || delete-hit.has-hover;
+    property <length> date-col: 148px;
+    property <length> price-col: 96px;
+    horizontal-stretch: 1;
     height: root.balance-text == "" ? Theme.row : Theme.row + Theme.s16;
 
     area := TouchArea {
         width: parent.width;
         height: parent.height;
+        mouse-cursor: pointer;
+        clicked => { root.edit(); }
     }
 
     HorizontalLayout {
+        width: parent.width;
+        height: parent.height;
         padding-left: Theme.s12;
-        padding-right: Theme.s8;
+        padding-right: 48px;
         spacing: Theme.s12;
         cross-axis-alignment: center;
 
         Rectangle {
             width: Theme.s32;
             height: Theme.s32;
-            border-radius: Theme.radius-sm;
+            border-radius: 16px;
             background: root.swatch;
             HorizontalLayout {
                 alignment: center;
@@ -236,6 +564,16 @@ export component SubscriptionRowView inherits Rectangle {
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
+            }
+            Rectangle {
+                x: parent.width - 10px;
+                y: parent.height - 10px;
+                width: 10px;
+                height: 10px;
+                border-radius: 5px;
+                background: root.category-swatch;
+                border-width: 1px;
+                border-color: Theme.page;
             }
         }
 
@@ -260,63 +598,89 @@ export component SubscriptionRowView inherits Rectangle {
                 text: root.balance-text;
                 font-size: Theme.font-xs;
                 font-weight: 600;
-                color: Theme.accent;
+                color: root.paused ? Theme.muted : (root.balance-short ? Theme.danger : Theme.ok);
                 overflow: elide;
             }
         }
 
-        VerticalLayout {
+        if root.badge != "": Rectangle {
             horizontal-stretch: 0;
-            spacing: Theme.s4;
-            alignment: center;
-            Text {
-                text: root.when;
-                font-size: Theme.font-xs;
-                color: Theme.muted;
-                horizontal-alignment: right;
-            }
-            Text {
-                text: root.price;
-                font-size: Theme.font-md;
-                font-weight: 600;
-                color: Theme.text;
-                horizontal-alignment: right;
+            vertical-stretch: 0;
+            height: Theme.s24;
+            border-radius: Theme.radius-sm;
+            background: Theme.danger-soft;
+            border-width: Theme.hairline;
+            border-color: Theme.danger;
+            HorizontalLayout {
+                padding-left: Theme.s8;
+                padding-right: Theme.s8;
+                alignment: center;
+                cross-axis-alignment: center;
+                Text {
+                    text: root.badge;
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                    font-family: "Courier New";
+                    color: Theme.danger;
+                    vertical-alignment: center;
+                }
             }
         }
 
-        HorizontalLayout {
-            spacing: Theme.s4;
-            alignment: end;
-            cross-axis-alignment: center;
-            opacity: root.hot || root.confirming ? 1 : 0;
-            animate opacity { duration: Theme.motion; }
+        VerticalLayout {
+            width: root.date-col;
+            horizontal-stretch: 0;
+            spacing: 2px;
+            alignment: center;
+            Text {
+                text: root.when;
+                font-size: Theme.font-sm;
+                font-weight: 600;
+                color: root.paused ? Theme.muted : Theme.text;
+                horizontal-alignment: right;
+                overflow: elide;
+            }
+            Text {
+                text: root.date;
+                font-size: Theme.font-sm;
+                font-weight: 600;
+                color: root.paused ? Theme.muted : Theme.text;
+                horizontal-alignment: right;
+                overflow: elide;
+            }
+        }
 
-            topup-b := GhostButton {
-                label: "Пополнить";
-                visible: root.can-topup;
-                enabled: root.can-topup && !root.confirming;
-                clicked => { if (root.can-topup && !root.confirming) { root.topup(); } }
-            }
-            edit-b := GhostButton {
-                label: "Изменить";
-                enabled: !root.confirming;
-                clicked => { if (!root.confirming) { root.edit(); } }
-            }
-            pause-b := GhostButton {
-                label: root.confirming ? "Отмена" : root.pause-label;
-                clicked => {
-                    if (root.confirming) { root.cancel(); }
-                    else { root.pause(); }
-                }
-            }
-            delete-b := GhostButton {
-                label: root.confirming ? "Да" : "Удалить";
-                danger: true;
-                clicked => {
-                    if (root.confirming) { root.remove(); }
-                    else { root.ask(); }
-                }
-            }
+        Text {
+            width: root.price-col;
+            horizontal-stretch: 0;
+            text: root.price;
+            font-size: Theme.font-md;
+            font-weight: 600;
+            color: Theme.text;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    Rectangle {
+        x: parent.width - 44px;
+        y: (parent.height - 32px) / 2;
+        width: 32px;
+        height: 32px;
+        border-radius: Theme.radius-sm;
+        opacity: root.hot ? 1 : 0;
+        background: delete-hit.has-hover ? Theme.danger-soft : transparent;
+        animate opacity { duration: Theme.motion; }
+        animate background { duration: Theme.motion; }
+        TrashGlyph {
+            x: 8px;
+            y: 8px;
+        }
+        delete-hit := TouchArea {
+            enabled: root.hot;
+            mouse-cursor: pointer;
+            clicked => { root.remove(); }
         }
     }
 }

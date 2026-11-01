@@ -15,6 +15,7 @@ struct AppState {
     settings: logic::Settings,
     editing: Option<String>,
     topping: Option<String>,
+    undo: Option<(usize, logic::Subscription)>,
     attempted: bool,
     subs_path: std::path::PathBuf,
     settings_path: std::path::PathBuf,
@@ -60,6 +61,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         settings: settings.clone(),
         editing: None,
         topping: None,
+        undo: None,
         attempted: false,
         subs_path,
         settings_path,
@@ -68,6 +70,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     ui.global::<Theme>().set_dark(settings.dark);
     ui.invoke_apply_theme();
     ui.set_category_choices(category_choices(&settings));
+    ui.set_icon_choices(icon_choices());
     ui.set_data_path(logic::app_dir().display().to_string().into());
     wire(&ui, &state);
     sync(&ui, &state);
@@ -222,6 +225,15 @@ fn wire(ui: &MainWindow, state: &Rc<RefCell<AppState>>) {
             }
         }
     });
+    ui.on_undo({
+        let weak = ui.as_weak();
+        let state = Rc::clone(state);
+        move || {
+            if let Some(ui) = weak.upgrade() {
+                undo_delete(&ui, &state);
+            }
+        }
+    });
     ui.on_remove_item({
         let weak = ui.as_weak();
         let state = Rc::clone(state);
@@ -308,7 +320,7 @@ fn sync(ui: &MainWindow, state: &Rc<RefCell<AppState>>) {
     };
     ui.set_monthly(dashboard.monthly.into());
     ui.set_yearly(dashboard.yearly.into());
-    ui.set_due(dashboard.due.into());
+    ui.set_horizon_total(dashboard.horizon_total.into());
     ui.set_active_count(dashboard.active_count.into());
     ui.set_hint(dashboard.hint.into());
     ui.set_empty(dashboard.empty);
@@ -316,7 +328,8 @@ fn sync(ui: &MainWindow, state: &Rc<RefCell<AppState>>) {
     ui.set_confirm_id(SharedString::default());
     ui.set_rows(as_model(dashboard.rows.into_iter().map(row_model).collect()));
     ui.set_balances(as_model(dashboard.balances.into_iter().map(balance_model).collect()));
-    ui.set_timeline(as_model(dashboard.timeline.into_iter().map(timeline_model).collect()));
+    ui.set_weeks(weeks_model(dashboard.month_weeks));
+    ui.set_month_title(dashboard.month_title.into());
     ui.set_categories(as_model(dashboard.categories.into_iter().map(category_model).collect()));
 }
 
@@ -341,6 +354,11 @@ fn view_of(ui: &MainWindow, settings: &logic::Settings) -> logic::ViewQuery {
             _ => logic::SortMode::Date,
         },
         category,
+        horizon_days: match ui.get_horizon_index() {
+            0 => 7,
+            2 => 360,
+            _ => 30,
+        },
     }
 }
 
@@ -443,11 +461,29 @@ fn toggle_pause(ui: &MainWindow, state: &Rc<RefCell<AppState>>, id: String) {
 fn remove_item(ui: &MainWindow, state: &Rc<RefCell<AppState>>, id: String) {
     let saved = {
         let mut app = state.borrow_mut();
-        app.items.retain(|item| item.id != id);
+        if let Some(index) = app.items.iter().position(|item| item.id == id) {
+            let item = app.items.remove(index);
+            ui.set_undo_text(format!("Удалено: {}", item.name).into());
+            app.undo = Some((index, item));
+        }
         if app.editing.as_deref() == Some(id.as_str()) {
             app.editing = None;
             ui.set_form_open(false);
         }
+        logic::save_subscriptions(&app.subs_path, &app.items)
+    };
+    apply_save(ui, saved);
+    sync(ui, state);
+}
+
+fn undo_delete(ui: &MainWindow, state: &Rc<RefCell<AppState>>) {
+    let saved = {
+        let mut app = state.borrow_mut();
+        if let Some((index, item)) = app.undo.take() {
+            let index = index.min(app.items.len());
+            app.items.insert(index, item);
+        }
+        ui.set_undo_text(SharedString::default());
         logic::save_subscriptions(&app.subs_path, &app.items)
     };
     apply_save(ui, saved);
@@ -573,6 +609,7 @@ fn read_form(ui: &MainWindow) -> logic::FormDraft {
         active: ui.get_form_active(),
         source_index: ui.get_form_source_index(),
         balance: ui.get_form_balance().to_string(),
+        icon_index: ui.get_form_icon_index(),
     }
 }
 
@@ -620,6 +657,7 @@ fn fill_form(ui: &MainWindow, current: Option<&logic::Subscription>, settings: &
             ui.set_form_source_index(0);
             ui.set_form_balance(SharedString::default());
             ui.set_form_category_index(logic::default_category_index(settings));
+            ui.set_form_icon_index(0);
             ui.set_category_draft(SharedString::default());
             ui.set_category_error(SharedString::default());
             ui.set_form_date(logic::format_input_date(logic::today()).into());
@@ -646,6 +684,7 @@ fn fill_form(ui: &MainWindow, current: Option<&logic::Subscription>, settings: &
                 .map(|index| index as i32)
                 .unwrap_or(fallback);
             ui.set_form_category_index(index);
+            ui.set_form_icon_index(logic::icon_index(subscription));
             ui.set_category_draft(SharedString::default());
             ui.set_category_error(SharedString::default());
             let date = logic::parse_date(&subscription.next_charge)
@@ -748,12 +787,16 @@ fn row_model(row: logic::RowView) -> SubscriptionRow {
         name: row.name.into(),
         detail: row.detail.into(),
         when: row.when.into(),
+        date: row.date.into(),
         price: row.price.into(),
         letter: row.letter.into(),
         swatch: paint(row.rgb),
+        category_swatch: paint(row.category_rgb),
         paused: row.paused,
         pause_label: row.pause_label.into(),
         balance_text: row.balance.into(),
+        balance_short: row.balance_short,
+        badge: row.badge.into(),
         can_topup: row.can_topup,
     }
 }
@@ -765,15 +808,28 @@ fn balance_model(line: logic::BalanceLine) -> BalanceRow {
         amount: line.amount.into(),
         until: line.until.into(),
         detail: line.detail.into(),
+        short: line.short,
     }
 }
 
-fn timeline_model(item: logic::TimelineItem) -> TimelineRow {
-    TimelineRow {
-        header: item.header,
-        label: item.label.into(),
-        price: item.price.into(),
+fn day_model(cell: logic::DayCell) -> DayCell {
+    DayCell {
+        label: cell.label.into(),
+        marked: cell.marked,
+        today: cell.today,
+        dim: cell.dim,
     }
+}
+
+fn weeks_model(weeks: Vec<Vec<logic::DayCell>>) -> ModelRc<ModelRc<DayCell>> {
+    let rows = weeks
+        .into_iter()
+        .map(|week| {
+            let cells = week.into_iter().map(day_model).collect::<Vec<_>>();
+            ModelRc::from(Rc::new(VecModel::from(cells)) as Rc<dyn slint::Model<Data = DayCell>>)
+        })
+        .collect::<Vec<_>>();
+    as_model(rows)
 }
 
 fn category_model(item: logic::CategoryShare) -> CategoryRow {
@@ -781,8 +837,21 @@ fn category_model(item: logic::CategoryShare) -> CategoryRow {
         name: item.name.into(),
         amount: item.amount.into(),
         share: item.share,
+        percent: item.percent.into(),
         swatch: paint(item.rgb),
     }
+}
+
+fn icon_choices() -> ModelRc<Choice> {
+    as_model(
+        logic::ICON_CHOICES
+            .into_iter()
+            .map(|color| Choice {
+                label: SharedString::default(),
+                swatch: paint(color),
+            })
+            .collect(),
+    )
 }
 
 fn category_choices(settings: &logic::Settings) -> ModelRc<Choice> {

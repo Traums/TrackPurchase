@@ -1,4 +1,4 @@
-import { LineEdit, ListView, Palette, Switch } from "std-widgets.slint";
+import { ComboBox, LineEdit, ListView, Palette, Switch } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 export { Theme }
 import {
@@ -6,7 +6,12 @@ import {
     Chip,
     GhostButton,
     PrimaryButton,
+    SearchField,
+    SecondaryButton,
+    SettingsButton,
     SubscriptionRowView,
+    PeriodCard,
+    StatusSwitch,
     SummaryCard,
     TextField,
 } from "widgets.slint";
@@ -21,25 +26,31 @@ export struct SubscriptionRow {
     name: string,
     detail: string,
     when: string,
+    date: string,
     price: string,
     letter: string,
     swatch: color,
+    category-swatch: color,
     paused: bool,
     pause-label: string,
     balance-text: string,
+    balance-short: bool,
+    badge: string,
     can-topup: bool,
 }
 
-export struct TimelineRow {
-    header: bool,
+export struct DayCell {
     label: string,
-    price: string,
+    marked: bool,
+    today: bool,
+    dim: bool,
 }
 
 export struct CategoryRow {
     name: string,
     amount: string,
     share: float,
+    percent: string,
     swatch: color,
 }
 
@@ -49,6 +60,7 @@ export struct BalanceRow {
     amount: string,
     until: string,
     detail: string,
+    short: bool,
 }
 
 component ModalShell inherits Rectangle {
@@ -85,10 +97,9 @@ component ListColumn inherits VerticalLayout {
     in property <bool> empty;
     in property <bool> no-results;
     in property <int> filter-index;
-    in property <int> sort-index;
+    in-out property <int> sort-index;
     in property <int> category-index;
     callback pick-filter(int);
-    callback pick-sort(int);
     callback pick-category(int);
     callback add();
     callback edit(string);
@@ -102,15 +113,30 @@ component ListColumn inherits VerticalLayout {
     spacing: Theme.s12;
 
     HorizontalLayout {
-        spacing: Theme.s8;
+        spacing: Theme.s12;
         cross-axis-alignment: center;
-        Chip { label: "Активные"; selected: root.filter-index == 1; clicked => { root.pick-filter(1); } }
-        Chip { label: "Все"; selected: root.filter-index == 0; clicked => { root.pick-filter(0); } }
-        Chip { label: "Пауза"; selected: root.filter-index == 2; clicked => { root.pick-filter(2); } }
+        StatusSwitch {
+            current: root.filter-index;
+            selected(index) => { root.pick-filter(index); }
+        }
         Rectangle { horizontal-stretch: 1; }
-        Chip { label: "По дате"; selected: root.sort-index == 0; clicked => { root.pick-sort(0); } }
-        Chip { label: "По сумме"; selected: root.sort-index == 1; clicked => { root.pick-sort(1); } }
-        Chip { label: "По названию"; selected: root.sort-index == 2; clicked => { root.pick-sort(2); } }
+        Text {
+            text: "Сортировка";
+            font-size: Theme.font-xs;
+            color: Theme.muted;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            width: 168px;
+            height: Theme.control;
+            horizontal-stretch: 0;
+            sort-box := ComboBox {
+                width: parent.width;
+                height: parent.height;
+                model: ["По дате", "По сумме", "По названию"];
+                current-index <=> root.sort-index;
+            }
+        }
     }
 
     Flickable {
@@ -172,20 +198,17 @@ component ListColumn inherits VerticalLayout {
                     name: row.name;
                     detail: row.detail;
                     when: row.when;
+                    date: row.date;
                     price: row.price;
                     letter: row.letter;
                     swatch: row.swatch;
+                    category-swatch: row.category-swatch;
                     paused: row.paused;
-                    pause-label: row.pause-label;
                     balance-text: row.balance-text;
-                    can-topup: row.can-topup;
-                    confirming: root.confirm-id == row.id;
-                    topup => { root.topup(row.id); }
+                    balance-short: row.balance-short;
+                    badge: row.badge;
                     edit => { root.edit(row.id); }
-                    pause => { root.pause(row.id); }
-                    ask => { root.ask(row.id); }
                     remove => { root.remove(row.id); }
-                    cancel => { root.cancel(); }
                 }
             }
         }
@@ -193,45 +216,57 @@ component ListColumn inherits VerticalLayout {
 }
 
 component SideColumn inherits Rectangle {
-    in property <[TimelineRow]> timeline;
     in property <[CategoryRow]> categories;
     in property <[BalanceRow]> balances;
+    in property <[[DayCell]]> weeks;
+    in property <string> month-title;
     in property <bool> fill;
     callback topup(string);
     horizontal-stretch: fill ? 1 : 0;
     vertical-stretch: 1;
     min-width: Theme.side;
     preferred-width: Theme.side;
+    max-width: Theme.side;
     min-height: Theme.list-min;
+    clip: true;
     background: transparent;
 
-    VerticalLayout {
-        spacing: Theme.s16;
-        alignment: start;
+    Flickable {
+        width: parent.width;
+        height: parent.height;
+        content-width: parent.width;
+        content-height: side-body.preferred-height;
+        side-body := VerticalLayout {
+            width: parent.width;
+            spacing: Theme.s16;
+            alignment: start;
 
     Card {
         VerticalLayout {
             padding: Theme.s16;
             spacing: Theme.s8;
             Text {
-                text: "Балансы сервисов";
+                text: "Требует внимания";
                 font-size: Theme.font-md;
                 font-weight: 600;
                 color: Theme.text;
+                horizontal-alignment: left;
             }
             Text {
-                text: "У каждого свой остаток";
+                text: "Не хватает на ближайшее списание";
                 font-size: Theme.font-xs;
                 color: Theme.muted;
+                horizontal-alignment: left;
             }
             if root.balances.length == 0: Text {
-                text: "В подписке выберите «С баланса» и укажите, сколько на ней осталось.";
+                text: "Все ближайшие списания покрыты";
                 font-size: Theme.font-sm;
                 color: Theme.muted;
                 wrap: word-wrap;
+                horizontal-alignment: left;
             }
             if root.balances.length > 0: VerticalLayout {
-                spacing: Theme.s8;
+                spacing: Theme.s12;
                 for item in root.balances: VerticalLayout {
                     spacing: Theme.s4;
                     HorizontalLayout {
@@ -243,86 +278,29 @@ component SideColumn inherits Rectangle {
                             color: Theme.text;
                             horizontal-stretch: 1;
                             overflow: elide;
+                            horizontal-alignment: left;
                         }
                         Text {
                             text: item.amount;
                             font-size: Theme.font-sm;
                             font-weight: 600;
-                            color: Theme.text;
+                            font-family: "Courier New";
+                            color: Theme.danger;
+                            horizontal-alignment: right;
                         }
                     }
                     Text {
-                        text: item.until;
-                        font-size: Theme.font-xs;
-                        color: Theme.text;
-                        wrap: word-wrap;
-                    }
-                    if item.detail != "": Text {
                         text: item.detail;
                         font-size: Theme.font-xs;
                         color: Theme.muted;
                         wrap: word-wrap;
+                        horizontal-alignment: left;
                     }
                     HorizontalLayout {
                         alignment: start;
-                        GhostButton {
+                        SecondaryButton {
                             label: "Пополнить";
                             clicked => { root.topup(item.id); }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Card {
-        VerticalLayout {
-            padding: Theme.s16;
-            spacing: Theme.s8;
-            Text {
-                text: "Ближайшие списания";
-                font-size: Theme.font-md;
-                font-weight: 600;
-                color: Theme.text;
-            }
-            Text {
-                text: "30 дней, каждая дата один раз";
-                font-size: Theme.font-xs;
-                color: Theme.muted;
-            }
-            if root.timeline.length == 0: Text {
-                text: "В ближайшие 30 дней списаний нет";
-                font-size: Theme.font-sm;
-                color: Theme.muted;
-                wrap: word-wrap;
-            }
-            if root.timeline.length > 0: VerticalLayout {
-                spacing: Theme.s4;
-                for item in root.timeline: Rectangle {
-                    height: item.header ? Theme.s32 : Theme.s24 + Theme.s4;
-                    if item.header: Text {
-                        text: item.label;
-                        font-size: Theme.font-xs;
-                        color: Theme.muted;
-                        vertical-alignment: center;
-                        height: parent.height;
-                    }
-                    if !item.header: HorizontalLayout {
-                        padding-left: Theme.s8;
-                        spacing: Theme.s8;
-                        cross-axis-alignment: center;
-                        Text {
-                            text: item.label;
-                            font-size: Theme.font-sm;
-                            color: Theme.text;
-                            horizontal-stretch: 1;
-                            overflow: elide;
-                        }
-                        Text {
-                            text: item.price;
-                            font-size: Theme.font-sm;
-                            font-weight: 600;
-                            color: Theme.text;
                         }
                     }
                 }
@@ -363,12 +341,22 @@ component SideColumn inherits Rectangle {
                         color: Theme.text;
                         horizontal-stretch: 1;
                         overflow: elide;
+                        horizontal-alignment: left;
+                    }
+                    Text {
+                        text: item.percent;
+                        font-size: Theme.font-xs;
+                        font-family: "Courier New";
+                        color: Theme.muted;
+                        horizontal-alignment: right;
                     }
                     Text {
                         text: item.amount;
                         font-size: Theme.font-sm;
                         font-weight: 600;
+                        font-family: "Courier New";
                         color: Theme.text;
+                        horizontal-alignment: right;
                     }
                 }
                 Rectangle {
@@ -385,6 +373,72 @@ component SideColumn inherits Rectangle {
             }
         }
     }
+
+    Card {
+        VerticalLayout {
+            padding: Theme.s16;
+            spacing: Theme.s8;
+            Text {
+                text: root.month-title;
+                font-size: Theme.font-md;
+                font-weight: 600;
+                color: Theme.text;
+                horizontal-alignment: left;
+            }
+            Text {
+                text: "Точки — дни списаний";
+                font-size: Theme.font-xs;
+                color: Theme.muted;
+                horizontal-alignment: left;
+            }
+            HorizontalLayout {
+                spacing: 2px;
+                alignment: start;
+                for title in ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]: Text {
+                    text: title;
+                    width: 32px;
+                    font-size: Theme.font-xs;
+                    color: Theme.muted;
+                    horizontal-alignment: left;
+                }
+            }
+            VerticalLayout {
+                spacing: 2px;
+                alignment: start;
+                for week in root.weeks: HorizontalLayout {
+                    spacing: 2px;
+                    alignment: start;
+                    for cell in week: Rectangle {
+                        width: 32px;
+                        height: 32px;
+                        border-radius: Theme.radius-sm;
+                        background: cell.today ? Theme.surface-2 : transparent;
+                        VerticalLayout {
+                            alignment: start;
+                            padding-top: 2px;
+                            padding-left: 4px;
+                            Text {
+                                text: cell.label;
+                                font-size: Theme.font-xs;
+                                font-family: "Courier New";
+                                color: cell.dim ? transparent : Theme.text;
+                                horizontal-alignment: left;
+                            }
+                        }
+                        if cell.marked: Rectangle {
+                            x: 4px;
+                            y: 22px;
+                            width: 5px;
+                            height: 5px;
+                            border-radius: 3px;
+                            background: Theme.text;
+                        }
+                    }
+                }
+            }
+        }
+    }
+        }
     }
 }
 
@@ -394,21 +448,24 @@ export component MainWindow inherits Window {
     preferred-height: Theme.window-h;
     min-width: Theme.window-min-w;
     min-height: Theme.window-min-h;
-    background: Theme.page;
+    background: Theme.dark ? @linear-gradient(165deg, #243049 0%, #141824 42%, #101218 100%) : @linear-gradient(180deg, #f7f8fc 0%, #e6e8f0 100%);
     default-font-family: "Segoe UI";
     default-font-size: Theme.font-md;
 
     in property <[SubscriptionRow]> rows;
-    in property <[TimelineRow]> timeline;
     in property <[CategoryRow]> categories;
+    in property <[[DayCell]]> weeks;
+    in property <string> month-title;
     in property <[BalanceRow]> balances;
     in property <[Choice]> category-choices;
+    in property <[Choice]> icon-choices;
     in property <string> monthly;
     in property <string> yearly;
-    in property <string> due;
+    in property <string> horizon-total;
     in property <string> active-count;
     in property <string> hint;
     in property <string> status;
+    in property <string> undo-text;
     in property <string> data-path;
     in property <string> form-title: "Новая подписка";
     in property <string> name-error;
@@ -429,6 +486,7 @@ export component MainWindow inherits Window {
     in-out property <int> form-currency-index: 0;
     in-out property <int> form-period-index: 1;
     in-out property <int> form-category-index: 6;
+    in-out property <int> form-icon-index: 0;
     in-out property <bool> form-active: true;
     in-out property <int> form-source-index: 0;
     in-out property <string> form-balance;
@@ -446,6 +504,7 @@ export component MainWindow inherits Window {
     in-out property <int> filter-index: 1;
     in-out property <int> sort-index: 0;
     in-out property <int> category-index: 0;
+    in-out property <int> horizon-index: 1;
     in-out property <string> confirm-id;
     in-out property <string> settings-usd;
     in-out property <string> settings-eur;
@@ -467,6 +526,7 @@ export component MainWindow inherits Window {
     callback export-json();
     callback export-csv();
     callback import-file();
+    callback undo();
     callback open-topup(string);
     callback close-topup();
     callback submit-topup();
@@ -479,6 +539,7 @@ export component MainWindow inherits Window {
     changed filter-index => { root.view-changed(); }
     changed sort-index => { root.view-changed(); }
     changed category-index => { root.view-changed(); }
+    changed horizon-index => { root.view-changed(); }
     changed form-name => { root.validate-form(); }
     changed form-amount => { root.validate-form(); }
     changed form-date => { root.validate-form(); }
@@ -499,6 +560,10 @@ export component MainWindow inherits Window {
         name-field.focus-input();
     }
 
+    public function focus-search() {
+        search-field.focus-input();
+    }
+
     public function focus-topup() {
         topup-field.focus-input();
     }
@@ -507,6 +572,14 @@ export component MainWindow inherits Window {
 
     FocusScope {
         key-pressed(event) => {
+            if (event.modifiers.control && (event.text == "n" || event.text == "N" || event.text == "т" || event.text == "Т")) {
+                root.open-form();
+                return accept;
+            }
+            if (event.modifiers.control && (event.text == "f" || event.text == "F" || event.text == "а" || event.text == "А")) {
+                root.focus-search();
+                return accept;
+            }
             if (event.text == Key.Escape && root.topup-open) {
                 root.close-topup();
                 return accept;
@@ -525,8 +598,16 @@ export component MainWindow inherits Window {
         Rectangle {
             width: parent.width;
             height: parent.height;
-            background: Theme.page;
-            animate background { duration: Theme.motion; }
+            background: Theme.dark ? @linear-gradient(165deg, #243049 0%, #141824 42%, #101218 100%) : @linear-gradient(180deg, #f7f8fc 0%, #e6e8f0 100%);
+
+            Rectangle {
+                x: parent.width - 320px;
+                y: -120px;
+                width: 420px;
+                height: 420px;
+                border-radius: 210px;
+                background: Theme.dark ? #3d7eff16 : #3d7eff10;
+            }
 
             VerticalLayout {
                 padding: Theme.s16;
@@ -543,22 +624,14 @@ export component MainWindow inherits Window {
                         vertical-alignment: center;
                     }
                     Rectangle { horizontal-stretch: 1; }
-                    Rectangle {
-                        width: Theme.search;
-                        height: Theme.control;
-                        horizontal-stretch: 0;
-                        LineEdit {
-                            width: parent.width;
-                            height: parent.height;
-                            placeholder-text: "Поиск";
-                            text <=> root.query;
-                        }
+                    search-field := SearchField {
+                        text <=> root.query;
                     }
                     PrimaryButton {
                         label: "+ Добавить";
                         clicked => { root.open-form(); }
                     }
-                    GhostButton {
+                    SettingsButton {
                         label: "Настройки";
                         clicked => { root.open-settings(); }
                     }
@@ -575,7 +648,11 @@ export component MainWindow inherits Window {
                     spacing: Theme.s12;
                     SummaryCard { caption: "В месяц"; value: root.monthly; }
                     SummaryCard { caption: "В год"; value: root.yearly; }
-                    SummaryCard { caption: "К списанию за 30 дней"; value: root.due; }
+                    PeriodCard {
+                        value: root.horizon-total;
+                        index: root.horizon-index;
+                        changed(index) => { root.horizon-index = index; }
+                    }
                     SummaryCard { caption: "Активных подписок"; value: root.active-count; }
                 }
 
@@ -590,10 +667,9 @@ export component MainWindow inherits Window {
                         empty: root.empty;
                         no-results: root.no-results;
                         filter-index: root.filter-index;
-                        sort-index: root.sort-index;
+                        sort-index <=> root.sort-index;
                         category-index: root.category-index;
                         pick-filter(index) => { root.filter-index = index; }
-                        pick-sort(index) => { root.sort-index = index; }
                         pick-category(index) => { root.category-index = index; }
                         add => { root.open-form(); }
                         edit(id) => { root.edit-item(id); }
@@ -604,9 +680,10 @@ export component MainWindow inherits Window {
                         topup(id) => { root.open-topup(id); }
                     }
                     SideColumn {
-                        timeline: root.timeline;
                         categories: root.categories;
                         balances: root.balances;
+                        weeks: root.weeks;
+                        month-title: root.month-title;
                         fill: false;
                         topup(id) => { root.open-topup(id); }
                     }
@@ -623,10 +700,9 @@ export component MainWindow inherits Window {
                         empty: root.empty;
                         no-results: root.no-results;
                         filter-index: root.filter-index;
-                        sort-index: root.sort-index;
+                        sort-index <=> root.sort-index;
                         category-index: root.category-index;
                         pick-filter(index) => { root.filter-index = index; }
-                        pick-sort(index) => { root.sort-index = index; }
                         pick-category(index) => { root.category-index = index; }
                         add => { root.open-form(); }
                         edit(id) => { root.edit-item(id); }
@@ -637,11 +713,27 @@ export component MainWindow inherits Window {
                         topup(id) => { root.open-topup(id); }
                     }
                     SideColumn {
-                        timeline: root.timeline;
                         categories: root.categories;
                         balances: root.balances;
+                        weeks: root.weeks;
+                        month-title: root.month-title;
                         fill: true;
                         topup(id) => { root.open-topup(id); }
+                    }
+                }
+
+                if root.undo-text != "": HorizontalLayout {
+                    spacing: Theme.s12;
+                    cross-axis-alignment: center;
+                    Text {
+                        text: root.undo-text;
+                        font-size: Theme.font-sm;
+                        color: Theme.text;
+                        vertical-alignment: center;
+                    }
+                    SecondaryButton {
+                        label: "Отменить";
+                        clicked => { root.undo(); }
                     }
                 }
 
@@ -658,26 +750,36 @@ export component MainWindow inherits Window {
                 open: root.form-open;
                 dismiss => { root.close-form(); }
                 Rectangle {
-                    width: Theme.dialog;
+                    width: 520px;
                     horizontal-stretch: 0;
                     vertical-stretch: 0;
                     background: Theme.surface;
-                    border-radius: Theme.radius;
+                    border-radius: 20px;
                     border-width: Theme.hairline;
                     border-color: Theme.line;
-                    drop-shadow-blur: Theme.shadow-blur;
+                    drop-shadow-blur: 40px;
                     drop-shadow-color: Theme.shadow;
-                    drop-shadow-offset-y: Theme.shadow-y;
+                    drop-shadow-offset-y: 16px;
                     TouchArea { enabled: root.form-open; }
                     VerticalLayout {
-                        padding: Theme.s16;
-                        spacing: Theme.s8;
+                        padding: Theme.s24;
+                        spacing: Theme.s12;
                         Text {
                             text: root.form-title;
                             font-size: Theme.font-lg;
-                            font-weight: 600;
+                            font-weight: 700;
                             color: Theme.text;
                         }
+                        Text {
+                            text: "Сумма, период и дата следующего списания";
+                            font-size: Theme.font-sm;
+                            color: Theme.muted;
+                        }
+                        Flickable {
+                            height: min(fields.preferred-height, 440px);
+                            content-height: fields.preferred-height;
+                            fields := VerticalLayout {
+                                spacing: Theme.s12;
                         name-field := TextField {
                             caption: "Название";
                             placeholder: "Например, Кинопоиск";
@@ -776,6 +878,34 @@ export component MainWindow inherits Window {
                                 clicked => { root.add-category(); }
                             }
                         }
+                        Text {
+                            text: "Цвет значка";
+                            font-size: Theme.font-xs;
+                            color: Theme.muted;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.s8;
+                            alignment: start;
+                            cross-axis-alignment: center;
+                            Chip {
+                                label: "Авто";
+                                selected: root.form-icon-index == 0;
+                                clicked => { root.form-icon-index = 0; }
+                            }
+                            for swatch[index] in root.icon-choices: Rectangle {
+                                width: 28px;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: swatch.swatch;
+                                border-width: root.form-icon-index == index + 1 ? 2px : 0px;
+                                border-color: Theme.text;
+                                animate border-width { duration: Theme.motion; }
+                                TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.form-icon-index = index + 1; }
+                                }
+                            }
+                        }
                         if root.category-error != "": Text {
                             text: root.category-error;
                             font-size: Theme.font-xs;
@@ -799,6 +929,12 @@ export component MainWindow inherits Window {
                                 vertical-alignment: center;
                             }
                             Switch { checked <=> root.form-active; }
+                        }
+                            }
+                        }
+                        Rectangle {
+                            height: Theme.hairline;
+                            background: Theme.line;
                         }
                         HorizontalLayout {
                             spacing: Theme.s8;
